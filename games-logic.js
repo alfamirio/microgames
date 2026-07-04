@@ -365,6 +365,94 @@
     }
   });
 
+
+  MR.games.push({
+    label: 'DRAG',
+    desc: 'Drag the shape into its matching socket.',
+    word: 'DRAG IT IN',
+    timeLimit: s => 3800/s,
+    start(ctx){
+      const stageRect = () => MR.stage.getBoundingClientRect();
+
+      const sPct = { x: MR.rand(15,58), y: MR.rand(10,55) };
+      const socket = document.createElement('div');
+      socket.style.position='absolute';
+      socket.style.left = sPct.x+'%'; socket.style.top = sPct.y+'%';
+      socket.style.width='76px'; socket.style.height='76px';
+      socket.style.borderRadius='50%';
+      socket.style.border='3px dashed var(--dim)';
+      socket.style.boxSizing='border-box';
+      MR.stage.appendChild(socket);
+
+      let startX, startY;
+      do {
+        startX = MR.rand(8,70); startY = MR.rand(8,68);
+      } while(Math.hypot(startX-sPct.x, startY-sPct.y) < 32);
+
+      const shape = document.createElement('div');
+      shape.style.position='absolute';
+      shape.style.left = startX+'%'; shape.style.top = startY+'%';
+      shape.style.width='56px'; shape.style.height='56px';
+      shape.style.borderRadius='50%';
+      shape.style.background='var(--flash)';
+      shape.style.cursor='grab';
+      shape.style.touchAction='none';
+      shape.style.zIndex='10';
+      MR.stage.appendChild(shape);
+
+      let dragging = false, dx=0, dy=0, alive=true;
+
+      function setShapePx(px, py){
+        shape.style.left = px+'px';
+        shape.style.top = py+'px';
+      }
+
+      shape.addEventListener('pointerdown', (e)=>{
+        if(!alive) return;
+        dragging = true;
+        shape.setPointerCapture(e.pointerId);
+        shape.style.cursor='grabbing';
+        const r = shape.getBoundingClientRect();
+        dx = e.clientX - r.left; dy = e.clientY - r.top;
+      });
+      shape.addEventListener('pointermove', (e)=>{
+        if(!dragging || !alive) return;
+        const r = stageRect();
+        let px = e.clientX - r.left - dx;
+        let py = e.clientY - r.top - dy;
+        px = Math.max(0, Math.min(r.width-56, px));
+        py = Math.max(0, Math.min(r.height-56, py));
+        setShapePx(px, py);
+      });
+      function finishDrag(){
+        if(!dragging || !alive) return;
+        dragging = false;
+        shape.style.cursor='grab';
+        const shapeRect = shape.getBoundingClientRect();
+        const socketRect = socket.getBoundingClientRect();
+        const scx = shapeRect.left + shapeRect.width/2;
+        const scy = shapeRect.top + shapeRect.height/2;
+        const ocx = socketRect.left + socketRect.width/2;
+        const ocy = socketRect.top + socketRect.height/2;
+        const dist = Math.hypot(scx-ocx, scy-ocy);
+        if(dist < socketRect.width/2 + 4){
+          alive = false;
+          socket.style.borderColor = 'var(--go)';
+          ctx.onWin();
+        } else {
+          const r = stageRect();
+          setShapePx(r.width*(startX/100), r.height*(startY/100));
+        }
+      }
+      shape.addEventListener('pointerup', finishDrag);
+      shape.addEventListener('pointercancel', finishDrag);
+
+      ctx.onCleanup = ()=>{ alive=false; };
+    }
+  });
+
+
+
   for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'logic';
 
 })();
