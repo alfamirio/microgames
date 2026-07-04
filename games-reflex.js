@@ -324,7 +324,10 @@
 
       function warnThenRed(){
         if(!alive) return;
-        const flashInterval = 110 / ctx.speedMul;
+        // floored: 6 flashes at this interval is the whole warning window
+        // before red locks in and catches a held button, so it shouldn't
+        // shrink all the way down with difficulty
+        const flashInterval = Math.max(90, 110 / ctx.speedMul);
         let flashesLeft = 5;
         let flashOn = false;
         function doFlash(){
@@ -396,64 +399,6 @@
 
 
   MR.games.push({
-    label: 'QUICKDRAW',
-    desc: 'Wait for the flash, then tap as fast as you can. Jump early and you lose instantly.',
-    word: 'WAIT FOR IT',
-    timeLimit: s => 4000/s,
-    start(ctx){
-      const btn = document.createElement('div');
-      btn.className = 'target';
-      btn.style.width='160px'; btn.style.height='160px';
-      btn.style.background = 'var(--danger)';
-      btn.style.cursor='pointer';
-      btn.style.fontFamily='var(--display)'; btn.style.fontSize='20px';
-      btn.style.color='#0b0b10'; btn.style.fontWeight='900';
-      btn.textContent = 'WAIT';
-      MR.stage.appendChild(btn);
-
-      let goState = false;
-      let alive = true;
-      let cueTimer = null;
-
-      function scheduleGo(){
-        if(!alive) return;
-        goState = false;
-        btn.style.background = 'var(--danger)';
-        btn.textContent = 'WAIT';
-        const delay = MR.rand(700,1600) / ctx.speedMul;
-        cueTimer = setTimeout(()=>{
-          if(!alive) return;
-          triggerGo();
-        }, delay);
-      }
-
-      function triggerGo(){
-        if(!alive) return;
-        goState = true;
-        btn.style.background = 'var(--go)';
-        btn.textContent = 'GO!';
-        const goWindow = MR.rand(500,850) / ctx.speedMul;
-        cueTimer = setTimeout(()=>{
-          if(!alive) return;
-          scheduleGo();
-        }, goWindow);
-      }
-
-      scheduleGo();
-
-      btn.addEventListener('click', ()=>{
-        if(!alive) return;
-        alive = false;
-        clearTimeout(cueTimer);
-        if(goState) ctx.onWin(); else ctx.onLose();
-      });
-
-      ctx.onCleanup = ()=>{ alive=false; clearTimeout(cueTimer); };
-    }
-  });
-
-
-  MR.games.push({
     label: 'BALANCE',
     desc: 'Nudge left/right to keep the drifting ball centered.',
     word: 'STAY CENTERED',
@@ -517,72 +462,6 @@
       ctx.survivalGame = true;
     }
   });
-
-
-  MR.games.push({
-    label: 'TRACE',
-    desc: 'Keep the dot inside a corridor that sways side to side.',
-    word: 'STAY INSIDE',
-    timeLimit: s => 4200/s,
-    start(ctx){
-      const track = document.createElement('div');
-      track.style.position='relative';
-      track.style.width='100%'; track.style.height='100%';
-      track.style.touchAction='none';
-      MR.stage.appendChild(track);
-
-      const corridor = document.createElement('div');
-      corridor.style.position='absolute';
-      corridor.style.top='6%'; corridor.style.bottom='6%';
-      corridor.style.width='26%';
-      corridor.style.background='var(--go)';
-      corridor.style.opacity='0.28';
-      corridor.style.borderRadius='10px';
-      track.appendChild(corridor);
-
-      const dot = document.createElement('div');
-      dot.style.position='absolute';
-      dot.style.width='20px'; dot.style.height='20px';
-      dot.style.borderRadius='50%';
-      dot.style.background='var(--flash)';
-      dot.style.top='50%'; dot.style.marginTop='-10px';
-      dot.style.transition='background .1s';
-      track.appendChild(dot);
-
-      let dotPct = 50;
-      let alive = true;
-      let started = false;
-      const t0 = performance.now();
-
-      function setPointerPct(clientX){
-        const r = track.getBoundingClientRect();
-        dotPct = Math.max(0, Math.min(100, (clientX-r.left)/r.width*100));
-        started = true;
-      }
-      track.addEventListener('pointermove', (e)=>setPointerPct(e.clientX));
-      track.addEventListener('pointerdown', (e)=>setPointerPct(e.clientX));
-
-      function loop(t){
-        if(!alive) return;
-        const elapsed = (t-t0)/1000;
-        const centerPct = 50 + 34*Math.sin(elapsed * 1.6 * ctx.speedMul);
-        corridor.style.left = (centerPct - 13) + '%';
-        dot.style.left = 'calc(' + dotPct + '% - 10px)';
-        const inside = Math.abs(dotPct - centerPct) <= 13;
-        dot.style.background = inside ? 'var(--flash)' : 'var(--danger)';
-        if(started && !inside){
-          alive = false;
-          ctx.onLose();
-          return;
-        }
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
-      ctx.survivalGame = true;
-    }
-  });
-
 
   MR.games.push({
     label: 'LANES',
@@ -1144,7 +1023,7 @@
       // basket faster at high difficulty too, but a human's reaction-time
       // overhead doesn't shrink to match, so the effective safety margin
       // quietly got worse the harder the game got.
-      const basketSpeed = 0.55; // px/ms
+      const basketSpeed = 0.40; // px/ms
       let goLeft = false, goRight = false;
       function onKeyDown(e){
         if(e.key==='ArrowLeft') goLeft = true;
@@ -1179,7 +1058,7 @@
       MR.stage.appendChild(leftZone);
       MR.stage.appendChild(rightZone);
 
-      const MIN_GOOD = 3;
+      const MIN_GOOD = 2;
       let goodCaught = 0;
       const progress = document.createElement('div');
       progress.style.position = 'absolute';
@@ -1275,6 +1154,245 @@
       // default outcome if time runs out is decided dynamically above via
       // ctx.stopIsWin once enough greens are caught; catching a red ends
       // the round immediately via ctx.onLose()
+    }
+  });
+
+
+  MR.games.push({
+    label: 'ORBIT',
+    desc: 'Keep the dot inside the ring, dodge the asteroids crossing the screen, and steer clear of the fixed obstacle sitting on the ring — hold up/down (or the tap zones) to nudge its orbit in or out as it drifts.',
+    word: 'HOLD THE ORBIT',
+    timeLimit: s => 5200/s,
+    start(ctx){
+      const w = MR.screen.clientWidth, h = MR.screen.clientHeight;
+      const cx = w/2, cy = h/2;
+      const targetR = Math.min(w,h) * 0.28;
+      const tolerance = Math.min(w,h) * 0.07; // half-width of the safe band
+      const hardOut = tolerance * 3.4; // deviation from target that's an instant bust
+
+      // safe-band ring, drawn once and never touched again — only the
+      // orbiting dot's color communicates in/out-of-band state as it moves
+      const band = document.createElement('div');
+      band.style.position = 'absolute';
+      band.style.left = (cx-targetR-tolerance)+'px';
+      band.style.top = (cy-targetR-tolerance)+'px';
+      band.style.width = (2*(targetR+tolerance))+'px';
+      band.style.height = (2*(targetR+tolerance))+'px';
+      band.style.borderRadius = '50%';
+      band.style.boxShadow = 'inset 0 0 0 '+(2*tolerance)+'px rgba(62,245,192,0.14)';
+      band.style.border = '1px solid rgba(62,245,192,0.4)';
+      MR.stage.appendChild(band);
+
+      // still pivot marker at the center
+      const pivot = document.createElement('div');
+      pivot.className = 'dot';
+      pivot.style.width='6px'; pivot.style.height='6px';
+      pivot.style.background='var(--dim)';
+      pivot.style.left=(cx-3)+'px'; pivot.style.top=(cy-3)+'px';
+      MR.stage.appendChild(pivot);
+
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      dot.style.width='22px'; dot.style.height='22px';
+      MR.stage.appendChild(dot);
+
+      let r = targetR;
+      let theta = Math.random()*Math.PI*2;
+      const angularSpeed = 0.0016 * ctx.speedMul; // rad/ms — the orbit itself speeds up with difficulty
+
+      // one static obstacle, fixed in place right on the target ring — the
+      // orbit passes through its spot every lap, so it's a hazard the
+      // player learns and times for, distinct from the crossing asteroids
+      const staticSize = 30;
+      const staticHitDist = staticSize/2 + 11 + 3; // obstacle radius + dot radius + a little buffer
+      const staticAngle = theta + Math.PI + MR.rand(-0.4,0.4); // opposite the dot's start, so it isn't an instant hit
+      // radius wanders anywhere inside the safe band (with a little inset so
+      // it doesn't visually poke past the band's own edge), not just dead
+      // center on the ring
+      const staticInset = staticSize/2;
+      const staticRange = Math.max(4, tolerance-staticInset);
+      const staticR = targetR + MR.rand(-staticRange, staticRange);
+      const staticX = cx + Math.cos(staticAngle)*staticR;
+      const staticY = cy + Math.sin(staticAngle)*staticR;
+      const staticEl = document.createElement('div');
+      staticEl.style.position = 'absolute';
+      staticEl.style.width = staticSize+'px'; staticEl.style.height = staticSize+'px';
+      staticEl.style.left = (staticX-staticSize/2)+'px'; staticEl.style.top = (staticY-staticSize/2)+'px';
+      staticEl.style.borderRadius = '50%';
+      staticEl.style.background = 'var(--life)';
+      staticEl.style.boxShadow = '0 0 10px rgba(181,101,245,0.65)';
+      MR.stage.appendChild(staticEl);
+
+      // asteroids that spawn off one edge of the screen and fly straight
+      // across to roughly the opposite side — genuinely crossing the play
+      // area (including the orbit itself) rather than just sitting still,
+      // so avoiding one means timing a radius dodge to whenever it happens
+      // to be passing through
+      const astSize = 24;
+      const astHitDist = astSize/2 + 11 + 3; // asteroid radius + dot radius + a little buffer
+      const asteroids = [];
+      function spawnAsteroid(){
+        const edge = Math.floor(Math.random()*4);
+        const pad = astSize*1.5;
+        let sx, sy, tx, ty;
+        if(edge===0){ sx = MR.rand(0,w); sy = -pad; tx = MR.rand(0,w); ty = h+pad; }
+        else if(edge===1){ sx = MR.rand(0,w); sy = h+pad; tx = MR.rand(0,w); ty = -pad; }
+        else if(edge===2){ sx = -pad; sy = MR.rand(0,h); tx = w+pad; ty = MR.rand(0,h); }
+        else { sx = w+pad; sy = MR.rand(0,h); tx = -pad; ty = MR.rand(0,h); }
+        const dx = tx-sx, dy = ty-sy;
+        const dist = Math.hypot(dx,dy);
+        // shorter crossing time at higher difficulty = a visibly faster rock
+        const crossTime = MR.rand(1500,2300) / ctx.speedMul;
+        const speed = dist/crossTime; // px/ms
+        const el = document.createElement('div');
+        el.style.position = 'absolute';
+        el.style.width = astSize+'px'; el.style.height = astSize+'px';
+        el.style.borderRadius = '50%';
+        el.style.background = 'var(--danger)';
+        el.style.boxShadow = '0 0 10px rgba(255,62,127,0.6)';
+        MR.stage.appendChild(el);
+        asteroids.push({ x: sx, y: sy, vx: dx/dist*speed, vy: dy/dist*speed, el });
+      }
+      let sinceSpawn = 0;
+      // first one arrives a bit sooner than the steady-state gap, so a round
+      // doesn't sit empty for its opening second; steady-state gap tightens
+      // (more asteroids in flight at once) as difficulty climbs
+      let nextSpawnGap = MR.rand(1000,1600) / ctx.speedMul;
+
+      // the radius drifts on its own via frequent, randomly re-rolled
+      // impulses — both direction and strength reroll on a short, jittery
+      // timer, so the push in/out is genuinely unpredictable rather than a
+      // slow, telegraphed back-and-forth
+      let driftV = 0; // px/ms, signed
+      let sinceReroll = 999;
+      const driftMax = 0.05 * ctx.speedMul; // px/ms, upper bound on drift speed
+
+      // fixed, not scaled by ctx.speedMul — same rationale as BASKET's
+      // basketSpeed: the player's own control feel should stay constant,
+      // with difficulty showing up in how aggressively the radius drifts
+      // instead of in how sluggish the player's counter-nudge feels.
+      const nudgeSpeed = 0.075; // px/ms
+
+      let holdOut = false, holdIn = false;
+      let dotCx = 0, dotCy = 0;
+
+      function place(){
+        const x = cx + Math.cos(theta)*r;
+        const y = cy + Math.sin(theta)*r;
+        dotCx = x; dotCy = y;
+        dot.style.left = (x-11)+'px';
+        dot.style.top = (y-11)+'px';
+        const dev = Math.abs(r-targetR);
+        const inBand = dev <= tolerance;
+        dot.style.background = inBand ? 'var(--go)' : (dev > hardOut ? 'var(--danger)' : 'var(--flash)');
+        // only counts as a win at the buzzer if the dot is actually inside
+        // the safe band right then — being out in the yellow/red when time
+        // runs out should not silently succeed
+        ctx.stopIsWin = inBand;
+      }
+      place();
+
+      function onKeyDown(e){
+        if(e.key==='ArrowUp') holdOut = true;
+        if(e.key==='ArrowDown') holdIn = true;
+      }
+      function onKeyUp(e){
+        if(e.key==='ArrowUp') holdOut = false;
+        if(e.key==='ArrowDown') holdIn = false;
+      }
+      MR.setKeyHandler(onKeyDown);
+      window.addEventListener('keyup', onKeyUp);
+
+      // tap-and-hold zones, top half nudges the orbit out, bottom half in —
+      // wiped along with everything else in #stage by clearStage()
+      const outZone = document.createElement('div');
+      const inZone = document.createElement('div');
+      [outZone, inZone].forEach(z=>{
+        z.style.position='absolute'; z.style.left='0'; z.style.right='0'; z.style.height='50%';
+        z.style.cursor='pointer'; z.style.touchAction='none';
+        z.style.display='flex'; z.style.justifyContent='center';
+        z.style.fontSize='10px'; z.style.letterSpacing='0.14em'; z.style.textTransform='uppercase';
+        z.style.color='rgba(242,240,234,0.16)';
+      });
+      outZone.style.top='0'; outZone.style.alignItems='flex-start'; outZone.style.paddingTop='10px';
+      outZone.textContent = '↑ out';
+      inZone.style.bottom='0'; inZone.style.alignItems='flex-end'; inZone.style.paddingBottom='10px';
+      inZone.textContent = '↓ in';
+      outZone.addEventListener('pointerdown', ()=>{ holdOut = true; });
+      inZone.addEventListener('pointerdown', ()=>{ holdIn = true; });
+      function releaseOut(){ holdOut = false; }
+      function releaseIn(){ holdIn = false; }
+      outZone.addEventListener('pointerup', releaseOut);
+      outZone.addEventListener('pointerleave', releaseOut);
+      outZone.addEventListener('pointercancel', releaseOut);
+      inZone.addEventListener('pointerup', releaseIn);
+      inZone.addEventListener('pointerleave', releaseIn);
+      inZone.addEventListener('pointercancel', releaseIn);
+      MR.stage.appendChild(outZone);
+      MR.stage.appendChild(inZone);
+
+      let alive = true;
+      let lastT = performance.now();
+      function loop(t){
+        if(!alive) return;
+        const dt = t-lastT; lastT = t;
+
+        theta += angularSpeed*dt;
+
+        sinceReroll += dt;
+        if(sinceReroll > MR.rand(180,420)){
+          driftV = MR.rand(-driftMax, driftMax);
+          sinceReroll = 0;
+        }
+        r += driftV*dt;
+
+        const nudge = (holdOut?1:0) - (holdIn?1:0);
+        if(nudge !== 0) r += nudge*nudgeSpeed*dt;
+
+        const minR = 14, maxR = Math.min(w,h)/2 - 14;
+        r = Math.max(minR, Math.min(maxR, r));
+
+        place();
+
+        if(Math.abs(r-targetR) > hardOut){ alive=false; ctx.onLose(); return; }
+
+        {
+          const dx = dotCx-staticX, dy = dotCy-staticY;
+          if(dx*dx + dy*dy < staticHitDist*staticHitDist){ alive=false; ctx.onLose(); return; }
+        }
+
+        sinceSpawn += dt;
+        if(sinceSpawn > nextSpawnGap){
+          spawnAsteroid();
+          sinceSpawn = 0;
+          nextSpawnGap = MR.rand(1400,2200) / ctx.speedMul;
+        }
+        for(let i=asteroids.length-1;i>=0;i--){
+          const a = asteroids[i];
+          a.x += a.vx*dt; a.y += a.vy*dt;
+          a.el.style.left = (a.x-astSize/2)+'px';
+          a.el.style.top = (a.y-astSize/2)+'px';
+          if(a.x < -astSize*3 || a.x > w+astSize*3 || a.y < -astSize*3 || a.y > h+astSize*3){
+            a.el.remove();
+            asteroids.splice(i,1);
+            continue;
+          }
+          const dx = dotCx-a.x, dy = dotCy-a.y;
+          if(dx*dx + dy*dy < astHitDist*astHitDist){ alive=false; ctx.onLose(); return; }
+        }
+
+        MR.rafId = requestAnimationFrame(loop);
+      }
+      MR.rafId = requestAnimationFrame(loop);
+      ctx.onCleanup = ()=>{
+        alive=false;
+        if(MR.rafId) cancelAnimationFrame(MR.rafId);
+        window.removeEventListener('keyup', onKeyUp);
+      };
+      // timeout outcome is decided dynamically above via ctx.stopIsWin,
+      // which tracks whether the dot is inside the safe band at that
+      // instant; hitting an asteroid, the static obstacle, or busting the
+      // hard-out deviation ends the round immediately via ctx.onLose()
     }
   });
 

@@ -271,7 +271,8 @@
       numberEl.textContent = current;
 
       let alive = true;
-      const flipEvery = 650/ctx.speedMul;
+      // floored: read-then-decide, not pure reflex — keep it legible
+      const flipEvery = Math.max(450, 650/ctx.speedMul);
       const flipTimer = setInterval(()=>{
         if(!alive) return;
         current = Math.floor(MR.rand(0,12));

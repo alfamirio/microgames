@@ -44,11 +44,11 @@
 
   const DIFF_KEY = 'microrush_diff';
   const DIFFICULTIES = [
-    { name: 'CHILL',  lives: 6, base: 0.7,  growth: 0.030, streakForLife: 2, maxSpeed: 1.5 },
-    { name: 'EASY',   lives: 5, base: 0.85, growth: 0.038, streakForLife: 3, maxSpeed: 1.5 },
-    { name: 'NORMAL', lives: 4, base: 1.0,  growth: 0.045, streakForLife: 4, maxSpeed: 1.7 },
-    { name: 'HARD',   lives: 3, base: 1.2,  growth: 0.060, streakForLife: 5, maxSpeed: 1.7 },
-    { name: 'INSANE', lives: 2, base: 1.4,  growth: 0.080, streakForLife: 6, maxSpeed: 2.0 }
+    { name: 'CHILL',  lives: 6, base: 0.8,  growth: 0.020, streakForLife: 2, maxSpeed: 1.2 },
+    { name: 'EASY',   lives: 5, base: 0.9,  growth: 0.030, streakForLife: 3, maxSpeed: 1.3 },
+    { name: 'NORMAL', lives: 4, base: 1.0,  growth: 0.040, streakForLife: 4, maxSpeed: 1.4 },
+    { name: 'HARD',   lives: 3, base: 1.1,  growth: 0.050, streakForLife: 5, maxSpeed: 1.5 },
+    { name: 'INSANE', lives: 2, base: 1.2,  growth: 0.060, streakForLife: 6, maxSpeed: 1.6 }
   ];
   let diffIndex = parseInt(localStorage.getItem(DIFF_KEY) || '2', 10);
   if(isNaN(diffIndex) || diffIndex < 0 || diffIndex >= DIFFICULTIES.length) diffIndex = 2;

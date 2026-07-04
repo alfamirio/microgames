@@ -144,11 +144,13 @@
         if(step >= sequence.length){ playback=false; enableInput(); return; }
         const idx = sequence[step];
         cells[idx].classList.add('lit');
+        // floored: this is watch-and-memorize, not a reflex test, so the
+        // flashes need to stay legible even as difficulty climbs
         setTimeout(()=>{
           cells[idx].classList.remove('lit');
           step++;
-          setTimeout(playStep, 220/ctx.speedMul);
-        }, 460/ctx.speedMul);
+          setTimeout(playStep, Math.max(160, 220/ctx.speedMul));
+        }, Math.max(320, 460/ctx.speedMul));
       }
       setTimeout(playStep, 400);
 
