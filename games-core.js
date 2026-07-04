@@ -3,6 +3,7 @@
 
   const stage = document.getElementById('stage');
   const screen = document.getElementById('screen');
+  const cabinet = document.getElementById('cabinet');
   const instructionEl = document.getElementById('instruction');
   const instructionText = document.getElementById('instructionText');
   const overlay = document.getElementById('overlay');
@@ -43,11 +44,11 @@
 
   const DIFF_KEY = 'microrush_diff';
   const DIFFICULTIES = [
-    { name: 'CHILL',  lives: 6, base: 0.7,  growth: 0.030, streakForLife: 2 },
-    { name: 'EASY',   lives: 5, base: 0.85, growth: 0.038, streakForLife: 3 },
-    { name: 'NORMAL', lives: 4, base: 1.0,  growth: 0.045, streakForLife: 4 },
-    { name: 'HARD',   lives: 3, base: 1.2,  growth: 0.060, streakForLife: 5 },
-    { name: 'INSANE', lives: 2, base: 1.4,  growth: 0.080, streakForLife: 6 }
+    { name: 'CHILL',  lives: 6, base: 0.7,  growth: 0.030, streakForLife: 2, maxSpeed: 1.5 },
+    { name: 'EASY',   lives: 5, base: 0.85, growth: 0.038, streakForLife: 3, maxSpeed: 1.5 },
+    { name: 'NORMAL', lives: 4, base: 1.0,  growth: 0.045, streakForLife: 4, maxSpeed: 1.7 },
+    { name: 'HARD',   lives: 3, base: 1.2,  growth: 0.060, streakForLife: 5, maxSpeed: 1.7 },
+    { name: 'INSANE', lives: 2, base: 1.4,  growth: 0.080, streakForLife: 6, maxSpeed: 2.0 }
   ];
   let diffIndex = parseInt(localStorage.getItem(DIFF_KEY) || '2', 10);
   if(isNaN(diffIndex) || diffIndex < 0 || diffIndex >= DIFFICULTIES.length) diffIndex = 2;
@@ -94,8 +95,10 @@
   let speedMul = 1;
   let roundTimeout = null;
   let flashTimeout = null;
+  let cabinetFlashTimeout = null;
   let keyHandler = null;
   let currentGame = null;
+  let currentCtx = null;
   let runHistory = [];
   let dailyRun = false;
   let pinnedLabels = new Set();
@@ -137,6 +140,37 @@
 
   function rand(min,max){ return Math.random()*(max-min)+min; }
   function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+  // Picks a game so that each *category* is equally likely regardless of
+  // how many games it contains, and each game within the chosen category
+  // is equally likely too. A flat pick(pool) would instead weight by raw
+  // game count — e.g. reflex (18 games) would come up ~4.5x as often as
+  // motion (4 games) purely because it has more entries, not because
+  // that's a fair 1-in-N-categories draw.
+  function pickUniformByCategory(pool){
+    const byCat = {};
+    const order = [];
+    pool.forEach(g=>{
+      const cat = g.category || 'uncategorized';
+      if(!byCat[cat]){ byCat[cat] = []; order.push(cat); }
+      byCat[cat].push(g);
+    });
+    return pick(byCat[pick(order)]);
+  }
+  // Fisher-Yates. NOT the same as arr.sort(() => Math.random()-0.5), which
+  // is a common but genuinely biased shuffle — a sort comparator has to be
+  // transitive/consistent, and a random one isn't, so the actual output
+  // distribution ends up shaped by whatever sort algorithm the engine uses
+  // internally rather than being a fair, uniform permutation. This walks
+  // the array once and swaps each slot with a uniformly random remaining
+  // one, which is the standard proof-uniform approach.
+  function shuffle(arr){
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+    return a;
+  }
 
   // ---------- MICROGAMES ----------
   // Each game: { label, word, timeLimit(speedMul)=>ms, start(ctx) }
@@ -158,6 +192,8 @@
     screen: screen,
     rand: rand,
     pick: pick,
+    shuffle: shuffle,
+    pickUniformByCategory: pickUniformByCategory,
     setKeyHandler(fn){
       if(keyHandler){ window.removeEventListener('keydown', keyHandler); }
       keyHandler = fn;
@@ -371,12 +407,33 @@
     }, 620);
   }
 
+  function flashCabinet(cls){
+    if(!cabinet) return;
+    cabinet.classList.remove('flash-win','flash-lose','flash-win-double');
+    void cabinet.offsetWidth; // restart animation even if same class as before
+    cabinet.classList.add(cls);
+    clearTimeout(cabinetFlashTimeout);
+    const duration = cls==='flash-win-double' ? 700 : 400;
+    cabinetFlashTimeout = setTimeout(()=>{ cabinet.classList.remove(cls); }, duration);
+  }
+
   function endRound(win){
     const myToken = roundToken;
     clearTimeout(roundTimeout);
     if(MR.rafId) cancelAnimationFrame(MR.rafId);
     if(myToken !== roundToken) return;
     roundToken++; // invalidate further callbacks from this round
+    // Run the round's own cleanup exactly once here, regardless of *why*
+    // the round ended (win, lose, or timeout). Games that attach listeners
+    // directly to persistent nodes (window, MR.stage) instead of going
+    // through MR.setKeyHandler rely on ctx.onCleanup to remove them —
+    // previously this only ran from the timeout branch below, so any game
+    // that ends via an immediate ctx.onWin()/ctx.onLose() (the common case)
+    // leaked those listeners forever, one more stale copy per round.
+    if(currentCtx && currentCtx.onCleanup){
+      currentCtx.onCleanup();
+    }
+    currentCtx = null;
     if(currentGame){
       recordResult(currentGame.label, win);
       runHistory.push({ label: currentGame.label, win: win });
@@ -384,7 +441,7 @@
     clearStage();
     if(win){
       setScore(score+1);
-      speedMul = DIFFICULTIES[activeDiffIndex].base + score*DIFFICULTIES[activeDiffIndex].growth;
+      speedMul = Math.min(DIFFICULTIES[activeDiffIndex].base + score*DIFFICULTIES[activeDiffIndex].growth, DIFFICULTIES[activeDiffIndex].maxSpeed);
       updateSpeedDisplay();
       streak++;
       let recovered = false;
@@ -393,6 +450,7 @@
         recovered = true;
       }
       renderLives(recovered);
+      flashCabinet(recovered ? 'flash-win-double' : 'flash-win');
       timerbar.style.transition = 'none';
       timerbar.style.background = 'var(--go)';
       timerbar.style.transform = 'scaleX(1)';
@@ -401,6 +459,7 @@
       streak = 0;
       lives--;
       renderLives();
+      flashCabinet('flash-lose');
       timerbar.style.transition = 'none';
       timerbar.style.background = 'var(--danger)';
       timerbar.style.transform = 'scaleX(1)';
@@ -454,6 +513,8 @@
     clearTimeout(roundTimeout);
     clearTimeout(flashTimeout);
     if(MR.rafId) cancelAnimationFrame(MR.rafId);
+    if(currentCtx && currentCtx.onCleanup) currentCtx.onCleanup();
+    currentCtx = null;
     clearStage();
     nextRound();
   }
@@ -464,7 +525,7 @@
     clearStage();
     const usePinned = pinnedLabels.size > 0 && !dailyRun;
     const pool = usePinned ? games.filter(g=>pinnedLabels.has(g.label)) : games;
-    const game = pick(pool);
+    const game = pickUniformByCategory(pool);
     currentGame = game;
     stageLabel.textContent = game.label;
     setActiveRoster(game.label);
@@ -480,6 +541,7 @@
         onWin(){ if(roundToken===myToken) endRound(true); },
         onLose(){ if(roundToken===myToken) endRound(false); }
       };
+      currentCtx = ctx;
       game.start(ctx);
       timerbar.style.transition = 'none';
       timerbar.style.transform = 'scaleX(1)';
@@ -490,7 +552,6 @@
       });
       roundTimeout = setTimeout(()=>{
         if(roundToken!==myToken) return;
-        if(ctx.onCleanup) ctx.onCleanup();
         const timeoutIsWin = ctx.survivalGame || ctx.stopIsWin;
         endRound(timeoutIsWin);
       }, limit);
@@ -613,14 +674,30 @@
     nextRound();
   }
 
-  // Deferred so the category files (games-reflex.js, games-motion.js,
-  // games-memory.js, games-logic.js), each a synchronous <script> loaded
-  // right after this one, have finished pushing into MR.games before the
-  // roster and start overlay are first rendered.
-  setTimeout(function(){
+  // Needs to run after the category files (games-reflex.js, games-motion.js,
+  // games-memory.js, games-logic.js) have finished pushing into MR.games.
+  // Those are plain blocking <script> tags loaded right after this one, so
+  // waiting on 'DOMContentLoaded' is a spec-guaranteed barrier: the browser
+  // does not fire it until every blocking script has finished executing,
+  // no matter how slow or uneven the network is for each file.
+  //
+  // (A setTimeout(fn, 0) here would NOT be a reliable substitute — it's
+  // just a queued task, and the browser can run it in a gap between two
+  // script fetches, before every category file has had a chance to run.
+  // That's an intermittent bug, not a hard failure, so it can look fine
+  // on a fast/cached load and randomly drop games on a slower one.)
+  function initRosterAndOverlay(){
     renderLives();
     populateRoster();
     renderStartOverlay();
-  }, 0);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initRosterAndOverlay);
+  } else {
+    // DOMContentLoaded already fired by the time this ran (e.g. this
+    // script was injected/executed late) — the barrier already passed,
+    // so it's safe to just run immediately.
+    initRosterAndOverlay();
+  }
 
 })();

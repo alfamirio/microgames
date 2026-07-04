@@ -1,94 +1,7 @@
 (function(){
   "use strict";
   const MR = window.MR;
-
-  MR.games.push({
-    label: 'DODGE',
-    desc: 'Move side to side to dodge the falling blocks.',
-    word: 'DODGE!',
-    timeLimit: s => 3600/s,
-    start(ctx){
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const player = document.createElement('div');
-      player.className='box';
-      player.style.width='34px'; player.style.height='34px';
-      player.style.background='var(--go)';
-      let px = w/2 - 17;
-      player.style.left = px+'px';
-      player.style.bottom = '10px';
-      MR.stage.appendChild(player);
-
-      const blocks = [];
-      let alive = true;
-      let elapsed = 0;
-      const spawnEvery = 420 / ctx.speedMul;
-      let sinceSpawn = 0;
-
-      function spawnBlock(){
-        const b = document.createElement('div');
-        b.className='box';
-        b.style.width='30px'; b.style.height='16px';
-        b.style.background='var(--danger)';
-        const bx = MR.rand(0, w-30);
-        b.style.left = bx+'px';
-        b.style.top = '-16px';
-        MR.stage.appendChild(b);
-        blocks.push({el:b, x:bx, y:-16});
-      }
-
-      function move(dx){
-        px = Math.max(0, Math.min(w-34, px+dx));
-        player.style.left = px+'px';
-      }
-      MR.setKeyHandler((e)=>{
-        if(e.key==='ArrowLeft') move(-28);
-        if(e.key==='ArrowRight') move(28);
-      });
-      // tap zones live on an element created fresh each round, so they're
-      // wiped by clearStage() and never pile up across repeated rounds
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer';
-      });
-      leftZone.style.left='0';
-      rightZone.style.right='0';
-      leftZone.addEventListener('click', ()=>move(-34));
-      rightZone.addEventListener('click', ()=>move(34));
-      MR.stage.appendChild(leftZone);
-      MR.stage.appendChild(rightZone);
-
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = t-lastT; lastT=t;
-        sinceSpawn += dt;
-        if(sinceSpawn > spawnEvery){ sinceSpawn=0; spawnBlock(); }
-        const speed = 0.32 * ctx.speedMul;
-        for(const b of blocks){
-          b.y += speed*dt;
-          b.el.style.top = b.y+'px';
-        }
-        // collision
-        for(const b of blocks){
-          if(b.y+16 > h-10 && b.y < h+10){
-            if(b.x < px+34 && b.x+30 > px){
-              alive=false; ctx.onLose(); return;
-            }
-          }
-        }
-        for(let i=blocks.length-1;i>=0;i--){
-          if(blocks[i].y > h){ blocks[i].el.remove(); blocks.splice(i,1); }
-        }
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
-      // survive whole round = win, handled by engine timeout
-      ctx.survivalGame = true;
-    }
-  });
+  const CATEGORY_START = MR.games.length;
 
 
   MR.games.push({
@@ -227,459 +140,436 @@
 
 
   MR.games.push({
-    label: 'BALANCE',
-    desc: 'Nudge left/right to keep the drifting ball centered.',
-    word: 'STAY CENTERED',
-    timeLimit: s => 3800/s,
+    label: 'GAUNTLET',
+    desc: 'Bullet hell — steer the dot away from everything onscreen. Arrow keys for free movement, or drag it directly with mouse/finger.',
+    word: 'DODGE!',
+    timeLimit: s => 5200/s,
     start(ctx){
-      const w = MR.screen.clientWidth - 36;
-      const track = document.createElement('div');
-      track.style.position='absolute'; track.style.left='18px'; track.style.right='18px';
-      track.style.top='50%'; track.style.height='10px'; track.style.marginTop='-5px';
-      track.style.background='var(--bezel)'; track.style.borderRadius='6px';
-      track.style.boxShadow='inset 0 0 0 1px var(--line)';
-      MR.stage.appendChild(track);
-
-      const centerZone = document.createElement('div');
-      centerZone.style.position='absolute'; centerZone.style.left='42%'; centerZone.style.width='16%';
-      centerZone.style.top='0'; centerZone.style.bottom='0';
-      centerZone.style.background='var(--go)'; centerZone.style.opacity='0.35'; centerZone.style.borderRadius='6px';
-      track.appendChild(centerZone);
-
-      const ball = document.createElement('div');
-      ball.style.position='absolute'; ball.style.width='22px'; ball.style.height='22px';
-      ball.style.borderRadius='50%'; ball.style.background='var(--flash)';
-      ball.style.top='-6px';
-      track.appendChild(ball);
-
-      let posPct = 50;
-      let drift = MR.rand(-1,1) < 0 ? -0.55 : 0.55;
-      let alive = true;
-
-      function move(dx){ posPct = Math.max(0, Math.min(100, posPct+dx)); }
-
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer';
-      });
-      leftZone.style.left='0'; rightZone.style.right='0';
-      leftZone.addEventListener('click', ()=>move(-9));
-      rightZone.addEventListener('click', ()=>move(9));
-      MR.stage.appendChild(leftZone);
-      MR.stage.appendChild(rightZone);
-
-      MR.setKeyHandler((e)=>{
-        if(e.key==='ArrowLeft') move(-9);
-        if(e.key==='ArrowRight') move(9);
-      });
-
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = (t-lastT); lastT = t;
-        posPct += drift * (dt/1000) * 10 * ctx.speedMul;
-        if(Math.random() < 0.01) drift = MR.rand(-1,1) < 0 ? -0.7 : 0.7;
-        ball.style.left = 'calc(' + posPct + '% - 11px)';
-        if(posPct <= 0 || posPct >= 100){ alive=false; ctx.onLose(); return; }
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
-      ctx.survivalGame = true;
-    }
-  });
-
-
-  MR.games.push({
-    label: 'TRACE',
-    desc: 'Keep the dot inside a corridor that sways side to side.',
-    word: 'STAY INSIDE',
-    timeLimit: s => 4200/s,
-    start(ctx){
-      const track = document.createElement('div');
-      track.style.position='relative';
-      track.style.width='100%'; track.style.height='100%';
-      track.style.touchAction='none';
-      MR.stage.appendChild(track);
-
-      const corridor = document.createElement('div');
-      corridor.style.position='absolute';
-      corridor.style.top='6%'; corridor.style.bottom='6%';
-      corridor.style.width='26%';
-      corridor.style.background='var(--go)';
-      corridor.style.opacity='0.28';
-      corridor.style.borderRadius='10px';
-      track.appendChild(corridor);
-
-      const dot = document.createElement('div');
-      dot.style.position='absolute';
-      dot.style.width='20px'; dot.style.height='20px';
-      dot.style.borderRadius='50%';
-      dot.style.background='var(--flash)';
-      dot.style.top='50%'; dot.style.marginTop='-10px';
-      dot.style.transition='background .1s';
-      track.appendChild(dot);
-
-      let dotPct = 50;
-      let alive = true;
-      let started = false;
-      const t0 = performance.now();
-
-      function setPointerPct(clientX){
-        const r = track.getBoundingClientRect();
-        dotPct = Math.max(0, Math.min(100, (clientX-r.left)/r.width*100));
-        started = true;
-      }
-      track.addEventListener('pointermove', (e)=>setPointerPct(e.clientX));
-      track.addEventListener('pointerdown', (e)=>setPointerPct(e.clientX));
-
-      function loop(t){
-        if(!alive) return;
-        const elapsed = (t-t0)/1000;
-        const centerPct = 50 + 34*Math.sin(elapsed * 1.6 * ctx.speedMul);
-        corridor.style.left = (centerPct - 13) + '%';
-        dot.style.left = 'calc(' + dotPct + '% - 10px)';
-        const inside = Math.abs(dotPct - centerPct) <= 13;
-        dot.style.background = inside ? 'var(--flash)' : 'var(--danger)';
-        if(started && !inside){
-          alive = false;
-          ctx.onLose();
-          return;
-        }
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
-      ctx.survivalGame = true;
-    }
-  });
-
-
-  MR.games.push({
-    label: 'LANES',
-    desc: 'Switch lanes to dodge the falling block.',
-    word: 'DODGE THE LANE',
-    timeLimit: s => 2800/s,
-    start(ctx){
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const laneCount = 3;
-      const laneWidth = w/laneCount;
-      let playerLane = 1;
-
-      const lanesWrap = document.createElement('div');
-      lanesWrap.style.position='absolute'; lanesWrap.style.inset='0';
-      lanesWrap.style.display='flex';
-      for(let i=0;i<laneCount;i++){
-        const lane = document.createElement('div');
-        lane.style.flex='1';
-        lane.style.borderLeft = i>0 ? '1px dashed var(--line)' : 'none';
-        lane.style.cursor='pointer';
-        lane.addEventListener('click', ()=>{ playerLane=i; updatePlayer(); });
-        lanesWrap.appendChild(lane);
-      }
-      MR.stage.appendChild(lanesWrap);
-
-      const dangerLane = Math.floor(Math.random()*laneCount);
-      const block = document.createElement('div');
-      block.className='box';
-      block.style.width = (laneWidth-16)+'px'; block.style.height='26px';
-      block.style.background='var(--danger)';
-      block.style.top='-30px';
-      block.style.left = (dangerLane*laneWidth+8)+'px';
-      MR.stage.appendChild(block);
+      const w = MR.screen.clientWidth - 26, h = MR.screen.clientHeight - 26;
+      const playerR = 10, bulletR = 5;
+      let px = w/2, py = h/2;
 
       const player = document.createElement('div');
-      player.className='box';
-      player.style.width='30px'; player.style.height='30px';
-      player.style.background='var(--go)';
-      player.style.bottom='10px';
+      player.className = 'dot';
+      player.style.width = (playerR*2)+'px'; player.style.height = (playerR*2)+'px';
+      player.style.background = 'var(--go)';
+      player.style.boxShadow = '0 0 10px var(--go)';
+      player.style.touchAction = 'none';
       MR.stage.appendChild(player);
 
-      function updatePlayer(){
-        player.style.left = (playerLane*laneWidth + laneWidth/2 - 15)+'px';
+      function placePlayer(){
+        player.style.left = (px-playerR)+'px';
+        player.style.top = (py-playerR)+'px';
       }
-      updatePlayer();
+      placePlayer();
 
+      const STEP = 26;
+      function move(dx, dy){
+        px = Math.max(playerR, Math.min(w-playerR, px+dx));
+        py = Math.max(playerR, Math.min(h-playerR, py+dy));
+        placePlayer();
+      }
       MR.setKeyHandler((e)=>{
-        if(e.key==='ArrowLeft') playerLane = Math.max(0, playerLane-1);
-        if(e.key==='ArrowRight') playerLane = Math.min(laneCount-1, playerLane+1);
-        updatePlayer();
+        if(e.key==='ArrowLeft') move(-STEP, 0);
+        if(e.key==='ArrowRight') move(STEP, 0);
+        if(e.key==='ArrowUp') move(0, -STEP);
+        if(e.key==='ArrowDown') move(0, STEP);
       });
 
+      // drag the dot directly, for touch/mouse — works from anywhere on
+      // the stage, not just the dot itself, since a bullet-hell field
+      // makes precisely grabbing a 20px target under fire unreasonable
+      let dragging = false;
+      function pointerToStage(e){
+        const r = MR.stage.getBoundingClientRect();
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+      }
+      function onPointerDown(e){
+        dragging = true;
+        MR.stage.setPointerCapture(e.pointerId);
+        const p = pointerToStage(e);
+        px = Math.max(playerR, Math.min(w-playerR, p.x));
+        py = Math.max(playerR, Math.min(h-playerR, p.y));
+        placePlayer();
+      }
+      function onPointerMove(e){
+        if(!dragging) return;
+        const p = pointerToStage(e);
+        px = Math.max(playerR, Math.min(w-playerR, p.x));
+        py = Math.max(playerR, Math.min(h-playerR, p.y));
+        placePlayer();
+      }
+      function onPointerUp(){ dragging = false; }
+      MR.stage.addEventListener('pointerdown', onPointerDown);
+      MR.stage.addEventListener('pointermove', onPointerMove);
+      MR.stage.addEventListener('pointerup', onPointerUp);
+      MR.stage.addEventListener('pointercancel', onPointerUp);
+
+      const bullets = [];
       let alive = true;
-      let by = -30;
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = t-lastT; lastT=t;
-        by += 0.24*ctx.speedMul*dt;
-        block.style.top = by+'px';
-        if(by+26 >= h-10){
-          alive=false;
-          if(playerLane===dangerLane) ctx.onLose(); else ctx.onWin();
-          return;
+      let elapsed = 0;
+
+      function spawnBullet(x, y, vx, vy, color){
+        const el = document.createElement('div');
+        el.className = 'dot';
+        el.style.width = (bulletR*2)+'px'; el.style.height = (bulletR*2)+'px';
+        el.style.background = color || 'var(--danger)';
+        el.style.left = (x-bulletR)+'px'; el.style.top = (y-bulletR)+'px';
+        MR.stage.appendChild(el);
+        bullets.push({ el, x, y, vx, vy });
+      }
+
+      // stream of bullets fired in from random edges, generally aimed
+      // toward the far side of the field so they actually cross it
+      let sinceStream = 0;
+      const streamEvery = () => Math.max(90, 300 - elapsed*0.012) / ctx.speedMul;
+      function spawnStreamBullet(){
+        const speed = (0.16 + MR.rand(0,0.06)) * ctx.speedMul;
+        const side = Math.floor(MR.rand(0,4));
+        let x,y,tx,ty;
+        if(side===0){ x=MR.rand(0,w); y=-bulletR; tx=MR.rand(0,w); ty=h; }
+        else if(side===1){ x=MR.rand(0,w); y=h+bulletR; tx=MR.rand(0,w); ty=0; }
+        else if(side===2){ x=-bulletR; y=MR.rand(0,h); tx=w; ty=MR.rand(0,h); }
+        else { x=w+bulletR; y=MR.rand(0,h); tx=0; ty=MR.rand(0,h); }
+        const ang = Math.atan2(ty-y, tx-x);
+        spawnBullet(x, y, Math.cos(ang)*speed, Math.sin(ang)*speed);
+      }
+
+      // periodic radial bursts from a random point, for the classic
+      // "ring expanding outward" bullet-hell beat
+      let sinceBurst = 0;
+      const burstEvery = 1650;
+      function spawnBurst(){
+        const bx = MR.rand(w*0.25, w*0.75);
+        const by = MR.rand(h*0.25, h*0.75);
+        const count = 10;
+        const speed = 0.15 * ctx.speedMul;
+        const offset = MR.rand(0, Math.PI*2);
+        for(let i=0;i<count;i++){
+          const ang = offset + (i/count)*Math.PI*2;
+          spawnBullet(bx, by, Math.cos(ang)*speed, Math.sin(ang)*speed, 'var(--flash)');
         }
-        MR.rafId = requestAnimationFrame(loop);
       }
-      MR.rafId = requestAnimationFrame(loop);
-      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
-    }
-  });
 
-
-  MR.games.push({
-    label: 'AIM',
-    desc: 'Stop the sliding marker while it is inside the green zone.',
-    word: 'STOP IN THE ZONE',
-    timeLimit: s => 3400/s,
-    start(ctx){
-      const wrap = document.createElement('div');
-      wrap.style.width='100%';
-      wrap.style.display='flex'; wrap.style.flexDirection='column';
-      wrap.style.alignItems='center'; wrap.style.gap='22px';
-
-      const track = document.createElement('div');
-      track.style.position='relative';
-      track.style.width='100%'; track.style.height='16px';
-      track.style.background='var(--bezel)';
-      track.style.borderRadius='8px';
-      track.style.boxShadow='inset 0 0 0 1px var(--line)';
-
-      const zoneStart = MR.rand(30,60);
-      const zoneWidth = 16;
-      const zone = document.createElement('div');
-      zone.style.position='absolute'; zone.style.top='0'; zone.style.bottom='0';
-      zone.style.left = zoneStart+'%'; zone.style.width = zoneWidth+'%';
-      zone.style.background='var(--go)'; zone.style.borderRadius='8px';
-      track.appendChild(zone);
-
-      const marker = document.createElement('div');
-      marker.style.position='absolute'; marker.style.top='-5px';
-      marker.style.width='6px'; marker.style.height='26px';
-      marker.style.background='var(--flash)'; marker.style.borderRadius='3px';
-      track.appendChild(marker);
-
-      wrap.appendChild(track);
-
-      const btn = document.createElement('div');
-      btn.className='cell';
-      btn.style.padding='14px 30px'; btn.style.cursor='pointer';
-      btn.style.fontFamily='var(--display)'; btn.style.fontSize='16px';
-      btn.textContent='STOP';
-      wrap.appendChild(btn);
-      MR.stage.appendChild(wrap);
-
-      let pos = 0, dir = 1, alive = true;
       let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = (t-lastT); lastT = t;
-        pos += dir * dt * 0.09 * ctx.speedMul;
-        if(pos > 100){ pos=100; dir=-1; }
-        if(pos < 0){ pos=0; dir=1; }
-        marker.style.left = pos+'%';
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
-
-      btn.addEventListener('click', ()=>{
-        if(!alive) return;
-        alive = false;
-        if(MR.rafId) cancelAnimationFrame(MR.rafId);
-        if(pos >= zoneStart && pos <= zoneStart+zoneWidth) ctx.onWin();
-        else ctx.onLose();
-      });
-    }
-  });
-
-
-  MR.games.push({
-    label: 'BALLOON',
-    desc: 'Hold to fill the gauge, release inside the green zone.',
-    word: 'FILL & RELEASE',
-    timeLimit: s => 3600/s,
-    start(ctx){
-      const wrap = document.createElement('div');
-      wrap.style.display='flex'; wrap.style.alignItems='center'; wrap.style.justifyContent='center';
-      wrap.style.gap='26px'; wrap.style.width='100%'; wrap.style.height='100%';
-
-      const gauge = document.createElement('div');
-      gauge.style.position='relative';
-      gauge.style.width='30px'; gauge.style.height='72%';
-      gauge.style.background='var(--bezel)';
-      gauge.style.borderRadius='8px';
-      gauge.style.boxShadow='inset 0 0 0 1px var(--line)';
-      gauge.style.overflow='hidden';
-
-      const zoneWidth = 18;
-      const zoneStart = MR.rand(50, 74);
-      const zone = document.createElement('div');
-      zone.style.position='absolute'; zone.style.left='0'; zone.style.right='0';
-      zone.style.bottom = zoneStart+'%'; zone.style.height = zoneWidth+'%';
-      zone.style.background='var(--go)'; zone.style.opacity='0.4';
-      gauge.appendChild(zone);
-
-      const fill = document.createElement('div');
-      fill.style.position='absolute'; fill.style.left='0'; fill.style.right='0'; fill.style.bottom='0';
-      fill.style.height='0%';
-      fill.style.background='var(--flash)';
-      gauge.appendChild(fill);
-
-      const balloon = document.createElement('div');
-      balloon.style.width='96px'; balloon.style.height='96px';
-      balloon.style.borderRadius='50%';
-      balloon.style.background='var(--danger)';
-      balloon.style.transformOrigin='center';
-      balloon.style.transform='scale(0.55)';
-      balloon.style.cursor='pointer';
-      balloon.style.touchAction='none';
-      balloon.style.display='flex'; balloon.style.alignItems='center'; balloon.style.justifyContent='center';
-      balloon.style.fontFamily='var(--display)'; balloon.style.fontWeight='900';
-      balloon.style.fontSize='13px'; balloon.style.color='#0b0b10';
-      balloon.textContent='HOLD';
-
-      wrap.appendChild(gauge);
-      wrap.appendChild(balloon);
-      MR.stage.appendChild(wrap);
-
-      let pct = 0;
-      let holding = false;
-      let alive = true;
-      let lastT = performance.now();
-
-      function render(){
-        fill.style.height = pct+'%';
-        balloon.style.transform = 'scale(' + (0.55 + pct/100*0.95) + ')';
-        balloon.textContent = (!holding && pct===0) ? 'HOLD' : '';
-      }
-
-      function pop(){
-        alive = false;
-        balloon.textContent = 'POP';
-        if(MR.rafId) cancelAnimationFrame(MR.rafId);
-        ctx.onLose();
-      }
-
       function loop(t){
         if(!alive) return;
         const dt = t-lastT; lastT = t;
-        if(holding){
-          pct += dt * 0.05 * ctx.speedMul;
-          if(pct >= 100){ pct = 100; render(); pop(); return; }
+        elapsed += dt;
+
+        sinceStream += dt;
+        const need = streamEvery();
+        while(sinceStream > need){ sinceStream -= need; spawnStreamBullet(); }
+
+        sinceBurst += dt;
+        if(sinceBurst > burstEvery / ctx.speedMul){ sinceBurst = 0; spawnBurst(); }
+
+        for(const b of bullets){
+          b.x += b.vx*dt; b.y += b.vy*dt;
+          b.el.style.left = (b.x-bulletR)+'px';
+          b.el.style.top = (b.y-bulletR)+'px';
         }
-        render();
+
+        for(const b of bullets){
+          const dist = Math.hypot(b.x-px, b.y-py);
+          if(dist < playerR+bulletR){ alive=false; ctx.onLose(); return; }
+        }
+
+        for(let i=bullets.length-1;i>=0;i--){
+          const b = bullets[i];
+          if(b.x < -30 || b.x > w+30 || b.y < -30 || b.y > h+30){
+            b.el.remove(); bullets.splice(i,1);
+          }
+        }
         MR.rafId = requestAnimationFrame(loop);
       }
       MR.rafId = requestAnimationFrame(loop);
-
-      balloon.addEventListener('pointerdown', (e)=>{
-        if(!alive) return;
-        holding = true;
-        balloon.setPointerCapture(e.pointerId);
-      });
-      function release(){
-        if(!alive || !holding) return;
-        holding = false;
+      ctx.onCleanup = ()=>{
         alive = false;
         if(MR.rafId) cancelAnimationFrame(MR.rafId);
-        if(pct >= zoneStart && pct <= zoneStart+zoneWidth) ctx.onWin();
-        else ctx.onLose();
-      }
-      balloon.addEventListener('pointerup', release);
-      balloon.addEventListener('pointercancel', release);
-
-      ctx.onCleanup = ()=>{ alive=false; holding=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
+        MR.stage.removeEventListener('pointerdown', onPointerDown);
+        MR.stage.removeEventListener('pointermove', onPointerMove);
+        MR.stage.removeEventListener('pointerup', onPointerUp);
+        MR.stage.removeEventListener('pointercancel', onPointerUp);
+      };
+      // survive the whole round = win, handled by engine timeout
+      ctx.survivalGame = true;
     }
   });
 
 
   MR.games.push({
-    label: 'DRAG',
-    desc: 'Drag the shape into its matching socket.',
-    word: 'DRAG IT IN',
-    timeLimit: s => 3800/s,
+    label: 'LAVA',
+    desc: 'The floor is lava — hop off tiles before they flash red then burn.',
+    word: 'FLOOR IS LAVA',
+    timeLimit: s => 5200/s,
     start(ctx){
-      const stageRect = () => MR.stage.getBoundingClientRect();
+      const COLS = 3, ROWS = 5;
+      const GAP = 6;
+      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
+      const cellW = (w - (COLS-1)*GAP) / COLS;
+      const cellH = (h - (ROWS-1)*GAP) / ROWS;
 
-      const sPct = { x: MR.rand(15,58), y: MR.rand(10,55) };
-      const socket = document.createElement('div');
-      socket.style.position='absolute';
-      socket.style.left = sPct.x+'%'; socket.style.top = sPct.y+'%';
-      socket.style.width='76px'; socket.style.height='76px';
-      socket.style.borderRadius='50%';
-      socket.style.border='3px dashed var(--dim)';
-      socket.style.boxSizing='border-box';
-      MR.stage.appendChild(socket);
+      const wrap = document.createElement('div');
+      wrap.style.position = 'absolute';
+      wrap.style.left = '18px'; wrap.style.top = '18px';
+      wrap.style.width = w+'px'; wrap.style.height = h+'px';
+      MR.stage.appendChild(wrap);
 
-      let startX, startY;
-      do {
-        startX = MR.rand(8,70); startY = MR.rand(8,68);
-      } while(Math.hypot(startX-sPct.x, startY-sPct.y) < 32);
-
-      const shape = document.createElement('div');
-      shape.style.position='absolute';
-      shape.style.left = startX+'%'; shape.style.top = startY+'%';
-      shape.style.width='56px'; shape.style.height='56px';
-      shape.style.borderRadius='50%';
-      shape.style.background='var(--flash)';
-      shape.style.cursor='grab';
-      shape.style.touchAction='none';
-      shape.style.zIndex='10';
-      MR.stage.appendChild(shape);
-
-      let dragging = false, dx=0, dy=0, alive=true;
-
-      function setShapePx(px, py){
-        shape.style.left = px+'px';
-        shape.style.top = py+'px';
-      }
-
-      shape.addEventListener('pointerdown', (e)=>{
-        if(!alive) return;
-        dragging = true;
-        shape.setPointerCapture(e.pointerId);
-        shape.style.cursor='grabbing';
-        const r = shape.getBoundingClientRect();
-        dx = e.clientX - r.left; dy = e.clientY - r.top;
-      });
-      shape.addEventListener('pointermove', (e)=>{
-        if(!dragging || !alive) return;
-        const r = stageRect();
-        let px = e.clientX - r.left - dx;
-        let py = e.clientY - r.top - dy;
-        px = Math.max(0, Math.min(r.width-56, px));
-        py = Math.max(0, Math.min(r.height-56, py));
-        setShapePx(px, py);
-      });
-      function finishDrag(){
-        if(!dragging || !alive) return;
-        dragging = false;
-        shape.style.cursor='grab';
-        const shapeRect = shape.getBoundingClientRect();
-        const socketRect = socket.getBoundingClientRect();
-        const scx = shapeRect.left + shapeRect.width/2;
-        const scy = shapeRect.top + shapeRect.height/2;
-        const ocx = socketRect.left + socketRect.width/2;
-        const ocy = socketRect.top + socketRect.height/2;
-        const dist = Math.hypot(scx-ocx, scy-ocy);
-        if(dist < socketRect.width/2 + 4){
-          alive = false;
-          socket.style.borderColor = 'var(--go)';
-          ctx.onWin();
-        } else {
-          const r = stageRect();
-          setShapePx(r.width*(startX/100), r.height*(startY/100));
+      // state per cell: 'safe' -> 'warn' (flashing) -> 'lava' (deadly) -> back to 'safe'
+      const cells = [];
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          const el = document.createElement('div');
+          el.className = 'cell';
+          el.style.position = 'absolute';
+          el.style.width = cellW+'px'; el.style.height = cellH+'px';
+          el.style.left = (c*(cellW+GAP))+'px';
+          el.style.top = (r*(cellH+GAP))+'px';
+          el.style.cursor = 'pointer';
+          const cellData = { r, c, el, state:'safe', t:0 };
+          el.addEventListener('click', ()=> tryMoveTo(cellData.r, cellData.c));
+          wrap.appendChild(el);
+          cells.push(cellData);
         }
       }
-      shape.addEventListener('pointerup', finishDrag);
-      shape.addEventListener('pointercancel', finishDrag);
+      function cellAt(r,c){ return cells[r*COLS+c]; }
 
-      ctx.onCleanup = ()=>{ alive=false; };
+      let pr = ROWS-1, pc = 1; // start bottom-middle
+
+      const player = document.createElement('div');
+      player.style.position = 'absolute';
+      player.style.width = (cellW*0.5)+'px'; player.style.height = (cellW*0.5)+'px';
+      player.style.borderRadius = '50%';
+      player.style.background = 'var(--go)';
+      player.style.boxShadow = '0 0 10px var(--go)';
+      player.style.transition = 'left 90ms ease, top 90ms ease';
+      wrap.appendChild(player);
+
+      function placePlayer(){
+        const cd = cellAt(pr,pc);
+        player.style.left = (cd.el.offsetLeft + cellW/2 - player.clientWidth/2)+'px';
+        player.style.top = (cd.el.offsetTop + cellH/2 - player.clientHeight/2)+'px';
+      }
+      placePlayer();
+
+      let alive = true;
+
+      function loseIfLava(cd){
+        if(cd.state === 'lava'){ alive = false; ctx.onLose(); return true; }
+        return false;
+      }
+
+      function tryMoveTo(r,c){
+        if(!alive) return;
+        if(r<0||r>=ROWS||c<0||c>=COLS) return;
+        pr = r; pc = c;
+        placePlayer();
+        loseIfLava(cellAt(pr,pc));
+      }
+      function move(dr,dc){ tryMoveTo(pr+dr, pc+dc); }
+
+      MR.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft') move(0,-1);
+        if(e.key==='ArrowRight') move(0,1);
+        if(e.key==='ArrowUp') move(-1,0);
+        if(e.key==='ArrowDown') move(1,0);
+      });
+
+      const WARN_MS = 900 / ctx.speedMul;
+      const LAVA_MS = 2600 / ctx.speedMul;
+      let sinceSpawn = 0;
+      const maxHot = Math.min(cells.length - 3, 8); // always leave a few safe tiles
+      function hotCount(){ return cells.filter(cd=>cd.state!=='safe').length; }
+
+      function spawnWarn(){
+        const candidates = cells.filter(cd=>cd.state==='safe');
+        if(!candidates.length) return;
+        const cd = MR.pick(candidates);
+        cd.state = 'warn'; cd.t = 0;
+        cd.el.classList.add('hazard-warn');
+      }
+
+      let lastT = performance.now();
+      function loop(t){
+        if(!alive) return;
+        const dt = t - lastT; lastT = t;
+
+        sinceSpawn += dt;
+        const spawnEvery = Math.max(180, 420 / ctx.speedMul);
+        if(sinceSpawn > spawnEvery && hotCount() < maxHot){
+          sinceSpawn = 0;
+          spawnWarn();
+        }
+
+        cells.forEach(cd=>{
+          if(cd.state==='warn'){
+            cd.t += dt;
+            if(cd.t >= WARN_MS){
+              cd.state = 'lava'; cd.t = 0;
+              cd.el.classList.remove('hazard-warn');
+              cd.el.classList.add('hazard-lava');
+              if(cd.r===pr && cd.c===pc){ alive=false; ctx.onLose(); return; }
+            }
+          } else if(cd.state==='lava'){
+            cd.t += dt;
+            if(cd.t >= LAVA_MS){
+              cd.state = 'safe'; cd.t = 0;
+              cd.el.classList.remove('hazard-lava');
+            }
+          }
+        });
+        if(!alive) return;
+
+        MR.rafId = requestAnimationFrame(loop);
+      }
+      MR.rafId = requestAnimationFrame(loop);
+      ctx.onCleanup = ()=>{ alive=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
+      // survive the whole round without standing on lava = win
+      ctx.survivalGame = true;
     }
   });
 
+
+  MR.games.push({
+    label: 'PATH',
+    desc: 'Navigate the grid from start to the flag before time runs out. Walls block the way.',
+    word: 'REACH THE FLAG',
+    timeLimit: s => 5000/s,
+    start(ctx){
+      const COLS = 5, ROWS = 5;
+      const GAP = 6;
+      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
+      const cellW = (w - (COLS-1)*GAP) / COLS;
+      const cellH = (h - (ROWS-1)*GAP) / ROWS;
+
+      function key(r,c){ return r*COLS+c; }
+
+      // pick a start/target pair far enough apart, then scatter walls,
+      // retrying until a BFS confirms a walkable path still exists —
+      // guarantees the round is always solvable, never a soft-lock
+      function bfsReachable(walls, start, target){
+        const seen = new Set([key(start.r,start.c)]);
+        const queue = [start];
+        while(queue.length){
+          const cur = queue.shift();
+          if(cur.r===target.r && cur.c===target.c) return true;
+          const neighbors = [[cur.r-1,cur.c],[cur.r+1,cur.c],[cur.r,cur.c-1],[cur.r,cur.c+1]];
+          for(const [nr,nc] of neighbors){
+            if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
+            const k = key(nr,nc);
+            if(seen.has(k) || walls.has(k)) continue;
+            seen.add(k);
+            queue.push({r:nr,c:nc});
+          }
+        }
+        return false;
+      }
+
+      function generateLayout(){
+        const minDist = Math.floor((COLS+ROWS)/2);
+        for(let attempt=0; attempt<40; attempt++){
+          const start = { r: Math.floor(MR.rand(0,ROWS)), c: Math.floor(MR.rand(0,COLS)) };
+          const target = { r: Math.floor(MR.rand(0,ROWS)), c: Math.floor(MR.rand(0,COLS)) };
+          const dist = Math.abs(start.r-target.r) + Math.abs(start.c-target.c);
+          if(dist < minDist) continue;
+          const walls = new Set();
+          const wallBudget = Math.floor(COLS*ROWS*0.28);
+          let guard = 0;
+          while(walls.size < wallBudget && guard < 200){
+            guard++;
+            const r = Math.floor(MR.rand(0,ROWS)), c = Math.floor(MR.rand(0,COLS));
+            const k = key(r,c);
+            if((r===start.r&&c===start.c) || (r===target.r&&c===target.c)) continue;
+            walls.add(k);
+          }
+          if(bfsReachable(walls, start, target)) return { start, target, walls };
+        }
+        return { start:{r:0,c:0}, target:{r:ROWS-1,c:COLS-1}, walls:new Set() };
+      }
+
+      const { start, target, walls } = generateLayout();
+      let pr = start.r, pc = start.c;
+
+      const wrap = document.createElement('div');
+      wrap.style.position = 'absolute';
+      wrap.style.left = '18px'; wrap.style.top = '18px';
+      wrap.style.width = w+'px'; wrap.style.height = h+'px';
+      MR.stage.appendChild(wrap);
+
+      const cellEls = [];
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          const el = document.createElement('div');
+          el.className = 'cell';
+          el.style.position = 'absolute';
+          el.style.width = cellW+'px'; el.style.height = cellH+'px';
+          el.style.left = (c*(cellW+GAP))+'px';
+          el.style.top = (r*(cellH+GAP))+'px';
+          const isWall = walls.has(key(r,c));
+          if(isWall){
+            el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+          } else {
+            el.style.cursor = 'pointer';
+            el.addEventListener('click', ()=> tryMoveTo(r,c));
+          }
+          wrap.appendChild(el);
+          cellEls[key(r,c)] = el;
+        }
+      }
+
+      const flag = document.createElement('div');
+      flag.style.position = 'absolute';
+      flag.style.width = (cellW*0.5)+'px'; flag.style.height = (cellH*0.5)+'px';
+      flag.style.borderRadius = '6px';
+      flag.style.background = 'var(--flash)';
+      flag.style.boxShadow = '0 0 10px var(--flash)';
+      flag.style.left = (target.c*(cellW+GAP) + cellW/2 - (cellW*0.25))+'px';
+      flag.style.top = (target.r*(cellH+GAP) + cellH/2 - (cellH*0.25))+'px';
+      wrap.appendChild(flag);
+
+      const player = document.createElement('div');
+      player.style.position = 'absolute';
+      player.style.width = (cellW*0.5)+'px'; player.style.height = (cellW*0.5)+'px';
+      player.style.borderRadius = '50%';
+      player.style.background = 'var(--go)';
+      player.style.boxShadow = '0 0 10px var(--go)';
+      player.style.transition = 'left 90ms ease, top 90ms ease';
+      wrap.appendChild(player);
+
+      function placePlayer(){
+        player.style.left = (pc*(cellW+GAP) + cellW/2 - player.clientWidth/2)+'px';
+        player.style.top = (pr*(cellH+GAP) + cellH/2 - player.clientHeight/2)+'px';
+      }
+      placePlayer();
+
+      let alive = true;
+
+      function tryMoveTo(r,c){
+        if(!alive) return;
+        if(r<0||r>=ROWS||c<0||c>=COLS) return;
+        if(walls.has(key(r,c))) return;
+        // only step to orthogonally adjacent cells — no teleporting through walls
+        if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
+        pr = r; pc = c;
+        placePlayer();
+        if(pr===target.r && pc===target.c){
+          alive = false;
+          ctx.onWin();
+        }
+      }
+      function move(dr,dc){ tryMoveTo(pr+dr, pc+dc); }
+
+      MR.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft') move(0,-1);
+        if(e.key==='ArrowRight') move(0,1);
+        if(e.key==='ArrowUp') move(-1,0);
+        if(e.key==='ArrowDown') move(1,0);
+      });
+    }
+  });
+
+
+  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'motion';
 
 })();

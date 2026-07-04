@@ -1,6 +1,7 @@
 (function(){
   "use strict";
   const MR = window.MR;
+  const CATEGORY_START = MR.games.length;
 
   MR.games.push({
     label: 'MATH',
@@ -37,7 +38,7 @@
         const cand = answer + Math.floor(MR.rand(-5,6));
         if(cand!==answer && cand>=0) opts.add(cand);
       }
-      const arr = Array.from(opts).sort(()=>Math.random()-0.5);
+      const arr = MR.shuffle(Array.from(opts));
       const row = document.createElement('div');
       row.style.display='grid'; row.style.gridTemplateColumns='repeat(2,1fr)';
       row.style.gap='10px'; row.style.width='70%';
@@ -57,12 +58,12 @@
     }
   });
 
-  const SCRAMBLE_WORDS = ['CODE','GAME','LEAP','QUICK','BRAVE','STORM','LIGHT','FLASH','TRACK','PIXEL'];
+  const SCRAMBLE_WORDS = ['MADRID', 'LONDON', 'PARIS', 'TOKYO', 'BERLIN', 'ROME', 'DUBAI', 'MANILA', 'MOSCOW', 'LIMA'];
 
 
   MR.games.push({
     label: 'SCRAMBLE',
-    desc: 'Tap the scrambled letters in the right order to spell the word.',
+    desc: 'Tap the scrambled letters — or just type — in the right order to spell the word.',
     word: 'UNSCRAMBLE',
     timeLimit: s => 4400/s,
     start(ctx){
@@ -70,7 +71,7 @@
       const letters = word.split('');
       let scrambled;
       do {
-        scrambled = [...letters].sort(()=>Math.random()-0.5);
+        scrambled = MR.shuffle(letters);
       } while(scrambled.join('')===word);
 
       const wrap = document.createElement('div');
@@ -94,7 +95,16 @@
       bank.style.display='flex'; bank.style.gap='8px'; bank.style.flexWrap='wrap';
       bank.style.justifyContent='center';
 
+      const hint = document.createElement('div');
+      hint.style.fontSize='11px'; hint.style.letterSpacing='0.1em'; hint.style.color='var(--dim)';
+      hint.textContent = 'TAP OR TYPE THE LETTERS';
+      wrap.appendChild(hint);
+
       let next = 0;
+      let alive = true;
+
+      // Map each letter to its tile elements so typing can find & "press" one.
+      const tilesByLetter = {};
       scrambled.forEach(ch=>{
         const tile = document.createElement('div');
         tile.className='cell';
@@ -102,22 +112,44 @@
         tile.style.display='flex'; tile.style.alignItems='center'; tile.style.justifyContent='center';
         tile.style.fontFamily='var(--display)'; tile.style.fontSize='20px'; tile.style.fontWeight='900';
         tile.textContent = ch;
-        tile.addEventListener('click', ()=>{
-          if(tile.dataset.used) return;
-          if(ch === word[next]){
-            tile.dataset.used = '1';
-            tile.style.opacity='0.25'; tile.style.pointerEvents='none';
-            slotEls[next].textContent = ch;
-            next++;
-            if(next>=word.length) ctx.onWin();
-          } else {
-            ctx.onLose();
-          }
-        });
+        tile.addEventListener('click', ()=> pressLetter(ch, tile));
         bank.appendChild(tile);
+        (tilesByLetter[ch] = tilesByLetter[ch] || []).push(tile);
       });
       wrap.appendChild(bank);
       MR.stage.appendChild(wrap);
+
+      function pressLetter(ch, tileEl){
+        if(!alive) return;
+        if(tileEl && tileEl.dataset.used) return;
+        if(ch === word[next]){
+          if(tileEl){
+            tileEl.dataset.used = '1';
+            tileEl.style.opacity='0.25'; tileEl.style.pointerEvents='none';
+          } else {
+            // Typed input: find the first unused tile for this letter.
+            const t = (tilesByLetter[ch]||[]).find(el=>!el.dataset.used);
+            if(t){ t.dataset.used='1'; t.style.opacity='0.25'; t.style.pointerEvents='none'; }
+          }
+          slotEls[next].textContent = ch;
+          next++;
+          if(next>=word.length){
+            alive = false;
+            ctx.onWin();
+          }
+        } else {
+          alive = false;
+          ctx.onLose();
+        }
+      }
+
+      MR.setKeyHandler((e)=>{
+        if(!alive) return;
+        const k = e.key.toUpperCase();
+        if(k.length===1 && k>='A' && k<='Z') pressLetter(k, null);
+      });
+
+      ctx.onCleanup = ()=>{ alive = false; };
     }
   });
 
@@ -128,7 +160,7 @@
     word: 'IN ORDER',
     timeLimit: s => 3600/s,
     start(ctx){
-      const n = 4;
+      const n = Math.floor(Math.random() * 2) + 2;
       const positions = [];
       for(let i=0;i<n;i++){
         positions.push({x: MR.rand(8,78), y: MR.rand(8,70)});
@@ -159,5 +191,179 @@
     }
   });
 
+
+  MR.games.push({
+    label: 'SORT IT',
+    desc: 'Tap the shapes in order — smallest to largest.',
+    word: 'SMALLEST TO LARGEST',
+    timeLimit: s => 3800/s,
+    start(ctx){
+      const n = 3;
+      const positions = [];
+      for(let i=0;i<n;i++){
+        positions.push({x: MR.rand(6,62), y: MR.rand(6,54)});
+      }
+
+      const sizes = [30,60,90];
+      const shuffled = MR.shuffle(sizes);
+      const order = shuffled.map((sz,i)=>i).sort((a,b)=>shuffled[a]-shuffled[b]);
+
+      let next = 0;
+      shuffled.forEach((sz,i)=>{
+        const b = document.createElement('div');
+        b.className = 'target';
+        b.style.width = sz+'px'; b.style.height = sz+'px';
+        b.style.left = positions[i].x+'%'; b.style.top = positions[i].y+'%';
+        b.style.cursor = 'pointer';
+        b.addEventListener('click', ()=>{
+          if(order[next] === i){
+            b.style.opacity = '0.25';
+            b.style.pointerEvents = 'none';
+            next++;
+            if(next >= n) ctx.onWin();
+          } else {
+            ctx.onLose();
+          }
+        });
+        MR.stage.appendChild(b);
+      });
+    }
+  });
+
+
+  MR.games.push({
+    label: 'PARITY',
+    desc: 'Numbers flash by — tap when one matches the rule.',
+    word: 'MATCH THE RULE',
+    timeLimit: s => 3600/s,
+    start(ctx){
+      const rules = [
+        { name: 'TAP: EVEN', test: n => n%2===0 },
+        { name: 'TAP: ODD', test: n => n%2===1 },
+        { name: 'TAP: MULT OF 3', test: n => n%3===0 }
+      ];
+      const rule = MR.pick(rules);
+
+      const wrap = document.createElement('div');
+      wrap.style.display='flex'; wrap.style.flexDirection='column';
+      wrap.style.alignItems='center'; wrap.style.gap='20px';
+
+      const ruleEl = document.createElement('div');
+      ruleEl.style.fontSize='12px'; ruleEl.style.letterSpacing='0.12em'; ruleEl.style.color='var(--dim)';
+      ruleEl.textContent = rule.name;
+      wrap.appendChild(ruleEl);
+
+      const numberEl = document.createElement('div');
+      numberEl.className = 'prompt-word';
+      numberEl.style.fontSize='46px';
+      wrap.appendChild(numberEl);
+
+      const btn = document.createElement('div');
+      btn.className = 'cell';
+      btn.style.padding='14px 30px'; btn.style.cursor='pointer';
+      btn.style.fontFamily='var(--display)'; btn.style.fontSize='16px';
+      btn.textContent = 'TAP';
+      wrap.appendChild(btn);
+
+      MR.stage.appendChild(wrap);
+
+      let current = Math.floor(MR.rand(0,12));
+      numberEl.textContent = current;
+
+      let alive = true;
+      const flipEvery = 650/ctx.speedMul;
+      const flipTimer = setInterval(()=>{
+        if(!alive) return;
+        current = Math.floor(MR.rand(0,12));
+        numberEl.textContent = current;
+      }, flipEvery);
+
+      btn.addEventListener('click', ()=>{
+        if(!alive) return;
+        alive = false;
+        clearInterval(flipTimer);
+        rule.test(current) ? ctx.onWin() : ctx.onLose();
+      });
+
+      ctx.onCleanup = ()=>{ alive=false; clearInterval(flipTimer); };
+    }
+  });
+
+
+  MR.games.push({
+    label: 'MATCH TYPE',
+    desc: 'Compare the two icons — tap SAME or DIFFERENT (or use S / D keys).',
+    word: 'SAME OR DIFFERENT?',
+    timeLimit: s => 3000/s,
+    start(ctx){
+      const shapeRadii = ['50%','8px'];
+      const colors = ['#3ef5c0','#ff3e7f','#f4e94c','#7a8cff','#ff9f4a'];
+      const shape1 = MR.pick(shapeRadii);
+      const color1 = MR.pick(colors);
+      const same = Math.random() < 0.5;
+      let shape2, color2;
+      if(same){
+        shape2 = shape1; color2 = color1;
+      } else {
+        do {
+          shape2 = MR.pick(shapeRadii);
+          color2 = MR.pick(colors);
+        } while(shape2===shape1 && color2===color1);
+      }
+
+      const wrap = document.createElement('div');
+      wrap.style.display='flex'; wrap.style.flexDirection='column';
+      wrap.style.alignItems='center'; wrap.style.gap='30px';
+
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.gap='36px';
+      [[shape1,color1],[shape2,color2]].forEach(([radius,color])=>{
+        const icon = document.createElement('div');
+        icon.style.width='72px'; icon.style.height='72px';
+        icon.style.borderRadius = radius;
+        icon.style.background = color;
+        row.appendChild(icon);
+      });
+      wrap.appendChild(row);
+
+      const btnRow = document.createElement('div');
+      btnRow.style.display='flex'; btnRow.style.gap='14px';
+
+      let alive = true;
+      function choose(isSameChoice){
+        if(!alive) return;
+        alive = false;
+        (isSameChoice === same) ? ctx.onWin() : ctx.onLose();
+      }
+
+      const btnSame = document.createElement('div');
+      btnSame.className = 'cell';
+      btnSame.style.padding='14px 22px'; btnSame.style.cursor='pointer';
+      btnSame.style.fontFamily='var(--display)'; btnSame.style.fontSize='14px';
+      btnSame.textContent = 'SAME (S)';
+      btnSame.addEventListener('click', ()=>choose(true));
+
+      const btnDiff = document.createElement('div');
+      btnDiff.className = 'cell';
+      btnDiff.style.padding='14px 22px'; btnDiff.style.cursor='pointer';
+      btnDiff.style.fontFamily='var(--display)'; btnDiff.style.fontSize='14px';
+      btnDiff.textContent = 'DIFFERENT (D)';
+      btnDiff.addEventListener('click', ()=>choose(false));
+
+      btnRow.appendChild(btnSame);
+      btnRow.appendChild(btnDiff);
+      wrap.appendChild(btnRow);
+
+      MR.stage.appendChild(wrap);
+
+      MR.setKeyHandler((e)=>{
+        const k = e.key.toLowerCase();
+        if(k==='s' || e.key==='ArrowLeft') choose(true);
+        else if(k==='d' || e.key==='ArrowRight') choose(false);
+      });
+    }
+  });
+
+  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'logic';
 
 })();

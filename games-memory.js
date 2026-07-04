@@ -1,6 +1,7 @@
 (function(){
   "use strict";
   const MR = window.MR;
+  const CATEGORY_START = MR.games.length;
 
   MR.games.push({
     label: 'SIMON',
@@ -54,7 +55,7 @@
     word: 'COUNT!',
     timeLimit: s => 3600/s,
     start(ctx){
-      const n = 3 + Math.floor(Math.random()*6);
+      const n = 2 + Math.floor(Math.random()*3);
       const dotsWrap = document.createElement('div');
       dotsWrap.style.position='relative';
       dotsWrap.style.width='100%'; dotsWrap.style.height='60%';
@@ -81,7 +82,7 @@
         while(options.size<4){
           options.add(Math.max(1, n + Math.floor(MR.rand(-3,4))));
         }
-        const opts = Array.from(options).sort(()=>Math.random()-0.5);
+        const opts = MR.shuffle(Array.from(options));
         const q = document.createElement('div');
         q.style.display='flex'; q.style.flexDirection='column'; q.style.gap='16px'; q.style.alignItems='center';
         const label = document.createElement('div');
@@ -189,7 +190,7 @@
       setTimeout(()=>{
         if(MR.roundToken() !== ctx.token) return;
         shown.remove();
-        const opts = [...colors].sort(()=>Math.random()-0.5);
+        const opts = MR.shuffle(colors);
         const grid = document.createElement('div');
         grid.style.display='grid'; grid.style.gridTemplateColumns='repeat(2, 1fr)';
         grid.style.gap='14px'; grid.style.width='70%';
@@ -242,7 +243,7 @@
         const cand = answer + Math.floor(MR.rand(-4,5));
         if(cand!==answer) opts.add(cand);
       }
-      const arr = Array.from(opts).sort(()=>Math.random()-0.5);
+      const arr = MR.shuffle(Array.from(opts));
       const optRow = document.createElement('div');
       optRow.style.display='grid'; optRow.style.gridTemplateColumns='repeat(2,1fr)';
       optRow.style.gap='10px'; optRow.style.width='70%';
@@ -304,5 +305,7 @@
     }
   });
 
+
+  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'memory';
 
 })();

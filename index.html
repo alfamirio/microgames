@@ -14,6 +14,7 @@
     --go:#3ef5c0;
     --danger:#ff3e7f;
     --flash:#f4e94c;
+    --life:#b565f5;
     --line: rgba(242,240,234,0.08);
     --display: "Arial Black", "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
@@ -44,6 +45,26 @@
     box-shadow: 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8);
     container-type: inline-size;
     flex-shrink:0;
+  }
+  #cabinet.flash-win{ animation: cabinetFlashWin 380ms ease; }
+  #cabinet.flash-lose{ animation: cabinetFlashLose 380ms ease; }
+  #cabinet.flash-win-double{ animation: cabinetFlashWinDouble 680ms ease; }
+  @keyframes cabinetFlashWin{
+    0%{ box-shadow: 0 0 0 0 rgba(62,245,192,0.85), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    45%{ box-shadow: 0 0 0 16px rgba(62,245,192,0.5), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    100%{ box-shadow: 0 0 0 0 rgba(62,245,192,0), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+  }
+  @keyframes cabinetFlashLose{
+    0%{ box-shadow: 0 0 0 0 rgba(255,62,127,0.85), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    45%{ box-shadow: 0 0 0 16px rgba(255,62,127,0.5), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    100%{ box-shadow: 0 0 0 0 rgba(255,62,127,0), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+  }
+  @keyframes cabinetFlashWinDouble{
+    0%{ box-shadow: 0 0 0 0 rgba(181,101,245,0.9), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    22%{ box-shadow: 0 0 0 16px rgba(181,101,245,0.55), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    44%{ box-shadow: 0 0 0 0 rgba(181,101,245,0), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    66%{ box-shadow: 0 0 0 16px rgba(181,101,245,0.55), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
+    100%{ box-shadow: 0 0 0 0 rgba(181,101,245,0), 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8); }
   }
   /* side panels: dead weight on a phone screen, so they're hidden until
      there's genuine horizontal room to use — then they earn their keep
@@ -338,6 +359,15 @@
     box-shadow: inset 0 0 0 1px var(--line);
   }
   .cell.lit{ background:var(--flash); }
+  .cell.hazard-warn{ animation: hazardBlink 0.32s steps(1,end) infinite; }
+  .cell.hazard-lava{
+    background:var(--danger);
+    box-shadow: inset 0 0 0 1px var(--line), 0 0 14px rgba(255,62,127,0.65);
+  }
+  @keyframes hazardBlink{
+    0%, 49%{ background:var(--bezel); }
+    50%, 100%{ background:rgba(255,62,127,0.75); }
+  }
   .arrow-key{
     width:56px; height:56px; border-radius:10px;
     background:var(--bezel); display:flex; align-items:center; justify-content:center;
