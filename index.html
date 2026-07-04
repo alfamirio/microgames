@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>MICRO/RUSH — microgame arcade</title>
+<style>
+  :root{
+    --bg:#0b0b10;
+    --panel:#14141c;
+    --bezel:#1c1c26;
+    --ink:#f2f0ea;
+    --dim:#6b6580;
+    --go:#3ef5c0;
+    --danger:#ff3e7f;
+    --flash:#f4e94c;
+    --line: rgba(242,240,234,0.08);
+    --display: "Arial Black", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; height:100%; color:var(--ink);
+    font-family:var(--mono);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; touch-action:none; user-select:none;
+    background:
+      radial-gradient(1200px 700px at 50% 20%, #17151f 0%, var(--bg) 60%);
+  }
+  #arcadeWrap{
+    display:flex; align-items:center; justify-content:center;
+    gap:0; width:100%; height:100%;
+  }
+  #cabinet{
+    /* sized to whichever viewport dimension is tighter, capped so it never
+       gets comically huge on a big desktop monitor */
+    width:min(94vw, 52.875vh, 460px);
+    aspect-ratio: 9/16;
+    max-height:94vh;
+    background:var(--bezel);
+    border-radius:22px;
+    padding:14px;
+    display:flex; flex-direction:column; gap:10px;
+    box-shadow: 0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,0.8);
+    container-type: inline-size;
+    flex-shrink:0;
+  }
+  /* side panels: dead weight on a phone screen, so they're hidden until
+     there's genuine horizontal room to use — then they earn their keep
+     with real content (controls, the game roster) instead of empty air */
+  .side-panel{ display:none; }
+  @media (min-width: 980px) and (min-height: 560px){
+    #arcadeWrap{ gap:48px; }
+    .side-panel{
+      display:flex; flex-direction:column; gap:14px;
+      width:240px; flex-shrink:0;
+      color:var(--dim);
+    }
+    #panelControls{ align-items:flex-start; }
+    #panelRoster{ align-items:flex-start; }
+    .panel-heading{
+      font-size:11px; letter-spacing:0.16em; text-transform:uppercase;
+      color:var(--flash);
+    }
+    .key-row{ display:flex; gap:8px; }
+    .key-glyph{
+      width:36px; height:36px; border-radius:8px;
+      background:var(--bezel); box-shadow: inset 0 0 0 1px var(--line);
+      display:flex; align-items:center; justify-content:center;
+      font-size:16px; color:var(--ink);
+    }
+    .panel-note{ font-size:12px; line-height:1.6; margin:0; max-width:180px; }
+    #rosterList{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2, 1fr); gap:7px 8px; width:100%; }
+    #rosterList li{
+      position:relative;
+      font-size:11px; letter-spacing:0.02em; padding:6px 8px;
+      border-radius:7px; background:transparent;
+      box-shadow: inset 0 0 0 1px var(--line);
+      transition: background .2s, color .2s, box-shadow .2s;
+      text-align:center;
+      cursor:default;
+    }
+    #rosterList li .roster-label{
+      display:block;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #rosterList li.active{
+      background:var(--flash); color:#0b0b10; box-shadow:none;
+      font-weight:700;
+    }
+    #rosterList li.pinned{
+      box-shadow: 0 0 0 2px var(--go);
+    }
+    #rosterList li.pinned.active{
+      box-shadow: 0 0 0 2px var(--go);
+    }
+    #rosterList li.pinned .roster-label::before{
+      content: "\25CF ";
+      color:var(--go);
+      font-size:8px;
+    }
+    #rosterList li.pinned.active .roster-label::before{
+      color:#0b0b10;
+    }
+    #rosterList li::after{
+      content: attr(data-desc);
+      position:absolute;
+      left:50%; bottom:calc(100% + 8px);
+      transform:translateX(-50%) translateY(4px);
+      width:170px;
+      background:var(--panel);
+      color:var(--ink);
+      font-size:10.5px; line-height:1.45; letter-spacing:0.01em;
+      font-weight:400;
+      text-align:left;
+      white-space:normal;
+      padding:8px 10px;
+      border-radius:8px;
+      box-shadow: 0 0 0 1px var(--line), 0 12px 24px -8px rgba(0,0,0,0.7);
+      opacity:0; pointer-events:none;
+      transition: opacity .15s ease, transform .15s ease;
+      z-index:50;
+    }
+    @media (hover:hover) and (pointer:fine){
+      #rosterList li:not(.active):hover{ box-shadow: inset 0 0 0 1px var(--dim); }
+      #rosterList li:hover::after{
+        opacity:1;
+        transform:translateX(-50%) translateY(0);
+      }
+    }
+    /* the cabinet gets real horizontal room here, so let it go wider
+       instead of staying phone-shaped in the middle of a big screen */
+    #cabinet{
+      width:min(38vw, 52.875vh, 560px);
+    }
+  }
+  /* extra-wide desktop: cabinet stops growing taller and instead widens
+     into a landscape screen, using the horizontal space directly */
+  @media (min-width: 1280px) and (min-height: 560px){
+    #cabinet{
+      width:min(62vw, 125.3vh, 940px);
+      aspect-ratio: 4/3;
+    }
+  }
+  #hud{
+    display:flex; flex-direction:column; gap:6px;
+    padding:2px 6px;
+    font-size:12px; letter-spacing:0.08em; color:var(--dim);
+  }
+  .hud-row{ display:flex; align-items:center; justify-content:space-between; width:100%; }
+  .hud-lives-row{ justify-content:flex-start; gap:8px; }
+  .hud-label{ font-size:11px; }
+  .hud-streak{ font-size:10px; color:var(--dim); margin-left:auto; }
+  .hud-streak b{ color:var(--flash); font-weight:700; }
+  #hud .val{ color:var(--ink); font-weight:600; }
+  #lives{ display:flex; gap:5px; flex-wrap:wrap; }
+  .life{ width:9px; height:9px; border-radius:2px; background:var(--go); transition:background .2s, transform .2s; }
+  .life.lost{ background:var(--line); transform:scale(0.6); }
+  .life.recovered{ animation: lifeRecover .5s ease; }
+  @keyframes lifeRecover{
+    0%{ transform:scale(0.4); background:var(--flash); }
+    60%{ transform:scale(1.4); background:var(--flash); }
+    100%{ transform:scale(1); background:var(--go); }
+  }
+  #screen{
+    position:relative;
+    flex:1;
+    background:var(--panel);
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  #timerbar{
+    position:absolute; top:0; left:0; height:3px; background:var(--flash);
+    width:100%; transform-origin:left; z-index:20;
+  }
+  #stage{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    padding:18px;
+  }
+  #instruction{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    z-index:30;
+    pointer-events:none;
+  }
+  #instruction span{
+    font-family:var(--display);
+    font-weight:900;
+    font-size:clamp(32px, 14cqw, 108px);
+    text-transform:uppercase;
+    letter-spacing:0.01em;
+    color:var(--flash);
+    text-shadow: 0 0 24px rgba(244,233,76,0.5);
+    transform: scale(0.4) rotate(-4deg);
+    opacity:0;
+  }
+  #instruction span.show{
+    animation: slam 0.42s cubic-bezier(.2,1.4,.4,1) forwards;
+  }
+  @keyframes slam{
+    0%{ transform:scale(0.3) rotate(-6deg); opacity:0; }
+    55%{ transform:scale(1.14) rotate(2deg); opacity:1; }
+    75%{ transform:scale(0.94) rotate(-1deg); }
+    100%{ transform:scale(1) rotate(0deg); opacity:1; }
+  }
+  #overlay{
+    position:absolute; inset:0; z-index:40;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; text-align:center; padding:24px;
+    background:rgba(11,11,16,0.92);
+    overflow-y:auto;
+  }
+  #overlay.hidden{ display:none; }
+  #overlay h1{
+    font-family:var(--display); font-weight:900; text-transform:uppercase;
+    font-size:32px; margin:0; letter-spacing:0.02em;
+  }
+  #overlay p{ margin:0; color:var(--dim); font-size:13px; line-height:1.6; }
+  #overlay .score{ font-family:var(--display); font-size:52px; color:var(--flash); margin:6px 0; }
+  button.arcade{
+    font-family:var(--mono); font-weight:700; letter-spacing:0.08em;
+    background:var(--flash); color:#141414; border:none;
+    padding:12px 26px; border-radius:8px; font-size:13px;
+    text-transform:uppercase; cursor:pointer;
+  }
+  button.arcade:active{ transform:translateY(1px); }
+  button.arcade.secondary{
+    background:transparent; color:var(--dim);
+    box-shadow: inset 0 0 0 1px var(--line);
+    margin-top:-4px;
+  }
+  @media (hover:hover) and (pointer:fine){
+    button.arcade.secondary:hover{ color:var(--ink); filter:none; }
+  }
+  .stats-view{
+    display:flex; flex-direction:column; align-items:center; gap:12px;
+    width:100%; max-width:320px;
+  }
+  .stats-scroll{
+    width:100%; max-height:46vh; overflow-y:auto;
+    border-radius:10px; box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .stats-table{ width:100%; border-collapse:collapse; font-size:11px; }
+  .stats-table th, .stats-table td{
+    padding:7px 8px; text-align:left; white-space:nowrap;
+  }
+  .stats-table thead th{
+    position:sticky; top:0; background:var(--panel); color:var(--dim);
+    text-transform:uppercase; letter-spacing:0.06em; font-size:9.5px;
+    border-bottom:1px solid var(--line);
+  }
+  .stats-table tbody tr:nth-child(even){ background:rgba(242,240,234,0.03); }
+  .stats-table td:nth-child(n+2){ text-align:right; font-variant-numeric:tabular-nums; }
+  .stats-table td:nth-child(4){ color:var(--go); }
+  .stats-table td:nth-child(5){ color:var(--danger); }
+  .stats-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  .stats-actions button{ font-size:11px; padding:11px 16px; }
+
+  .run-breakdown{
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    width:100%; max-width:300px;
+  }
+  .run-breakdown-heading{
+    font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--dim);
+  }
+  .run-pip-row{
+    display:flex; flex-wrap:wrap; gap:4px; justify-content:center; max-width:100%;
+  }
+  .run-pip{
+    width:9px; height:9px; border-radius:2px; flex-shrink:0;
+  }
+  .run-pip.win{ background:var(--go); }
+  .run-pip.lose{ background:var(--danger); }
+  .run-breakdown-scroll{
+    width:100%; max-height:26vh; overflow-y:auto;
+    border-radius:10px; box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .run-table td.run-won{ color:var(--go); }
+  .run-table td.run-lost{ color:var(--danger); }
+
+  .daily-block{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    width:100%; max-width:280px;
+    padding-top:6px; margin-top:2px;
+    border-top:1px solid var(--line);
+  }
+  .daily-heading{
+    font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--flash);
+  }
+  .daily-note{ font-size:11px; color:var(--dim); margin:0; line-height:1.4; }
+  .daily-played{ font-size:12px; color:var(--dim); }
+  .daily-played b{ color:var(--flash); }
+  .daily-diff-tag{ color:var(--dim); font-size:11px; }
+  .daily-tag{
+    font-size:10px; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--flash); margin-top:-8px;
+  }
+  .share-fallback{ width:100%; max-width:280px; }
+  .share-fallback textarea{
+    width:100%; height:70px; resize:none;
+    background:var(--bezel); color:var(--ink);
+    border:none; border-radius:8px; box-shadow: inset 0 0 0 1px var(--line);
+    font-family:var(--mono); font-size:11px; padding:8px;
+  }
+  .diff-picker{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .diff-caption{ font-size:11px; letter-spacing:0.1em; color:var(--dim); text-transform:uppercase; }
+  .diff-caption span{ color:var(--flash); font-weight:700; }
+  .diff-row{ display:flex; gap:7px; }
+  .diff-pill{
+    width:34px; height:34px; border-radius:8px;
+    background:var(--bezel); box-shadow: inset 0 0 0 1px var(--line);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:13px; font-weight:700; color:var(--dim);
+    cursor:pointer; transition: background .15s, color .15s;
+  }
+  .diff-pill.active{ background:var(--flash); color:#0b0b10; }
+  @media (hover:hover) and (pointer:fine){
+    .diff-pill:not(.active):hover{ filter:brightness(1.3); }
+  }
+  .stage-label{
+    position:absolute; bottom:8px; left:0; right:0; text-align:center;
+    font-size:10px; letter-spacing:0.12em; color:var(--dim); z-index:5;
+  }
+  /* generic game elements */
+  .box{ position:absolute; border-radius:8px; }
+  .dot{ position:absolute; border-radius:50%; }
+  .target{
+    width:64px; height:64px; border-radius:50%;
+    background:var(--go); position:absolute;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .cell{
+    border-radius:10px; background:var(--bezel);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .cell.lit{ background:var(--flash); }
+  .arrow-key{
+    width:56px; height:56px; border-radius:10px;
+    background:var(--bezel); display:flex; align-items:center; justify-content:center;
+    font-size:22px; color:var(--dim); box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .arrow-key.active{ background:var(--go); color:#0b0b10; }
+  .prompt-word{
+    font-family:var(--display); font-weight:900; text-transform:uppercase;
+    font-size:38px; color:var(--ink);
+  }
+  #focusFallback{ position:absolute; width:1px; height:1px; opacity:0; }
+
+  /* mouse/trackpad only — touch devices don't get a lingering hover state */
+  @media (hover:hover) and (pointer:fine){
+    .cell[style*="cursor:pointer"]:hover, .target:hover, .arrow-key:hover{
+      filter: brightness(1.12);
+    }
+    button.arcade:hover{ filter: brightness(1.06); }
+  }
+</style>
+</head>
+<body>
+
+<audio id="bgMusic" src="music/microgames_music.opus" loop preload="auto" style="display:none"></audio>
+
+<div id="arcadeWrap">
+
+  <div class="side-panel" id="panelControls">
+    <div class="panel-heading">controls</div>
+    <div class="key-row"><span class="key-glyph">←</span><span class="key-glyph">→</span><span class="key-glyph">↑</span><span class="key-glyph">↓</span></div>
+    <p class="panel-note">arrow keys, or click / tap directly on the screen — every game works with either.</p>
+  </div>
+
+  <div id="cabinet">
+    <div id="hud">
+      <div class="hud-row">
+        <div>SCORE <span class="val" id="scoreVal">0</span></div>
+        <div>SPEED <span class="val" id="speedVal">1.00×</span></div>
+        <div>BEST <span class="val" id="bestVal">0</span></div>
+      </div>
+      <div class="hud-row hud-lives-row">
+        <span class="hud-label">LIVES</span>
+        <div id="lives"></div>
+        <span class="val" id="livesCount"></span>
+        <span class="hud-streak" id="streakHint"></span>
+      </div>
+    </div>
+    <div id="screen">
+      <div id="timerbar"></div>
+      <div id="stage"></div>
+      <div id="instruction"><span id="instructionText"></span></div>
+      <div class="stage-label" id="stageLabel"></div>
+      <div id="overlay">
+        <h1>MICRO/RUSH</h1>
+        <p>a rapid-fire stack of tiny games.<br>tap, click, or use arrow keys.<br>read the word. react fast. survive.</p>
+        <div class="diff-picker" id="diffPickerStart"></div>
+        <button class="arcade" id="startBtn">start</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="side-panel" id="panelRoster">
+    <div class="panel-heading">on the cartridge</div>
+    <ul id="rosterList"></ul>
+    <p class="panel-note">tap games to pin them and play only that set on repeat — tap all pins off to shuffle everything again.</p>
+  </div>
+
+</div>
+
+<script src="games.js"></script>
+</body>
+</html>
