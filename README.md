@@ -14,15 +14,15 @@ Pure HTML/CSS/vanilla JS — no build step, no dependencies. Open `index.html` i
 
 ## Difficulty
 
-Five presets (persisted in `localStorage`), each tuning starting lives, base speed, how fast speed ramps up, and how long a streak needs to be to earn a life back:
+Five presets (persisted in `localStorage`), each tuning starting lives, base speed, how fast speed ramps up, how high speed can climb, and how long a streak needs to be to earn a life back:
 
-| Difficulty | Lives | Base speed | Streak for life |
-|---|---|---|---|
-| CHILL | 6 | 0.70× | 2 |
-| EASY | 5 | 0.85× | 3 |
-| NORMAL | 4 | 1.00× | 4 |
-| HARD | 3 | 1.20× | 5 |
-| INSANE | 2 | 1.40× | 6 |
+| Difficulty | Lives | Base speed | Max speed | Streak for life |
+|---|---|---|---|---|
+| CHILL | 6 | 0.80× | 1.2× | 2 |
+| EASY | 5 | 0.90× | 1.3× | 3 |
+| NORMAL | 4 | 1.00× | 1.4× | 4 |
+| HARD | 3 | 1.10× | 1.5× | 5 |
+| INSANE | 2 | 1.20× | 1.6× | 6 |
 
 ## Daily challenge
 
@@ -39,20 +39,29 @@ Per-game play counts, wins, and losses persist across sessions in `localStorage`
 ## Project structure
 
 ```
-index.html          — markup, styling, difficulty/stats UI
-games-core.js        — engine: round loop, scoring, lives/streak, timer bar,
-                        difficulty & stats persistence, daily-seed logic,
-                        roster panel, the shared MR namespace all games use
-games-reflex.js      — reflex/twitch games (ODD ONE, MASH, WHACK, CATCH, POP,
-                        COMBO, RED LIGHT, QUICKDRAW, BALANCE, TRACE, LANES,
-                        AIM, BALLOON, DRAG, DODGE, RICOCHET, BASKET)
-games-motion.js       — movement/timing games (HURDLE, GAUNTLET, LAVA, PATH)
-games-memory.js       — memory/observation games (SIMON, COUNT, MEMORY,
-                        MATCH, PATTERN, SPOT)
-games-logic.js        — logic/puzzle games (MATH, SCRAMBLE, ORDER, SORT IT,
-                        PARITY, MATCH TYPE)
-music/                — optional background track (microgames_music.opus);
-                        the game runs fine if it's missing
+index.html              — markup, styling, difficulty/stats UI
+games-core.js            — engine: round loop, scoring, lives/streak, timer bar,
+                           difficulty & stats persistence, daily-seed logic,
+                           roster panel, the shared MR namespace all games use
+games-reflex-tap.js      — single-beat reaction tests (ODD ONE, MASH, WHACK,
+                           CATCH, GO/STOP, POP, COMBO, RED LIGHT)
+games-reflex-move.js     — reflex games with sustained movement/aiming
+                           (BALANCE, LANES, AIM, BALLOON, DODGE, BREAKOUT,
+                           BASKET, ORBIT, MINI GOLF)
+games-motion-runner.js   — side-on runner/obstacle games (DINOJUMP, LAVA,
+                           SWIM, CLIMB)
+games-motion-arcade.js   — top-down arcade/chase games (BULLET HELL, ESCAPE,
+                           FOG MAZE, MAZE-MUNCH, REVERSE MUNCH,
+                           DOUBLE TROUBLE, SNAKE)
+games-shooting.js        — aim-and-shoot games (QUICKDRAW, ALLEY, RUSH ALLEY,
+                           BIRD HUNT, SKEET, R-TYPE, SPACE INVADERS)
+games-memory.js          — memory/observation games (COUNT, MEMORY, ODD FLASH,
+                           MATCH, PATTERN, SPOT, POSITION, CARD PEEK)
+games-logic.js           — logic/puzzle games (MATH, SCRAMBLE, ORDER, SORT IT,
+                           MATCH TYPE, DRAG, MORE DOTS, MISSING PIECE,
+                           MIRROR MATCH, GROUP BY RULE)
+music/                   — optional background track (microgames_music.opus);
+                           the game runs fine if it's missing
 ```
 
 ## Adding a new microgame
