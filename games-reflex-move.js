@@ -12,23 +12,13 @@
     timeLimit: s => 3800/s,
     start(ctx){
       const w = MR.screen.clientWidth - 36;
-      const track = document.createElement('div');
-      track.style.position='absolute'; track.style.left='18px'; track.style.right='18px';
-      track.style.top='50%'; track.style.height='10px'; track.style.marginTop='-5px';
-      track.style.background='var(--bezel)'; track.style.borderRadius='6px';
-      track.style.boxShadow='inset 0 0 0 1px var(--line)';
+      const track = MR.makeEl('', { position: 'absolute', left: '18px', right: '18px', top: '50%', height: '10px', marginTop: '-5px', background: 'var(--bezel)', borderRadius: '6px', boxShadow: 'inset 0 0 0 1px var(--line)' });
       MR.stage.appendChild(track);
 
-      const centerZone = document.createElement('div');
-      centerZone.style.position='absolute'; centerZone.style.left='42%'; centerZone.style.width='16%';
-      centerZone.style.top='0'; centerZone.style.bottom='0';
-      centerZone.style.background='var(--go)'; centerZone.style.opacity='0.35'; centerZone.style.borderRadius='6px';
+      const centerZone = MR.makeEl('', { position: 'absolute', left: '42%', width: '16%', top: '0', bottom: '0', background: 'var(--go)', opacity: '0.35', borderRadius: '6px' });
       track.appendChild(centerZone);
 
-      const ball = document.createElement('div');
-      ball.style.position='absolute'; ball.style.width='22px'; ball.style.height='22px';
-      ball.style.borderRadius='50%'; ball.style.background='var(--flash)';
-      ball.style.top='-6px';
+      const ball = MR.makeEl('', { position: 'absolute', width: '22px', height: '22px', borderRadius: '50%', background: 'var(--flash)', top: '-6px' });
       track.appendChild(ball);
 
       let posPct = 50;
@@ -37,13 +27,8 @@
 
       function move(dx){ posPct = Math.max(0, Math.min(100, posPct+dx)); }
 
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer';
-      });
-      leftZone.style.left='0'; rightZone.style.right='0';
+      const leftZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', left: '0' });
+      const rightZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', right: '0' });
       leftZone.addEventListener('click', ()=>move(-9));
       rightZone.addEventListener('click', ()=>move(9));
       MR.stage.appendChild(leftZone);
@@ -83,14 +68,9 @@
       const laneWidth = w/laneCount;
       let playerLane = Math.floor(laneCount/2);
 
-      const lanesWrap = document.createElement('div');
-      lanesWrap.style.position='absolute'; lanesWrap.style.inset='0';
-      lanesWrap.style.display='flex';
+      const lanesWrap = MR.makeEl('', { position: 'absolute', inset: '0', display: 'flex' });
       for(let i=0;i<laneCount;i++){
-        const lane = document.createElement('div');
-        lane.style.flex='1';
-        lane.style.borderLeft = i>0 ? '1px dashed var(--line)' : 'none';
-        lane.style.cursor='pointer';
+        const lane = MR.makeEl('', { flex: '1', borderLeft: i>0 ? '1px dashed var(--line)' : 'none', cursor: 'pointer' });
         lane.addEventListener('click', ()=>{ playerLane=i; updatePlayer(); });
         lanesWrap.appendChild(lane);
       }
@@ -104,21 +84,12 @@
       const dangerLanes = allLanes.slice(0, dangerCount);
 
       const blocks = dangerLanes.map(laneIdx=>{
-        const block = document.createElement('div');
-        block.className='box';
-        block.style.width = (laneWidth-16)+'px'; block.style.height='26px';
-        block.style.background='var(--danger)';
-        block.style.top='-30px';
-        block.style.left = (laneIdx*laneWidth+8)+'px';
+        const block = MR.makeEl('box', { width: (laneWidth-16)+'px', height: '26px', background: 'var(--danger)', top: '-30px', left: (laneIdx*laneWidth+8)+'px' });
         MR.stage.appendChild(block);
         return block;
       });
 
-      const player = document.createElement('div');
-      player.className='box';
-      player.style.width='30px'; player.style.height='30px';
-      player.style.background='var(--go)';
-      player.style.bottom='10px';
+      const player = MR.makeEl('box', { width: '30px', height: '30px', background: 'var(--go)', bottom: '10px' });
       MR.stage.appendChild(player);
 
       function updatePlayer(){
@@ -159,38 +130,21 @@
     word: 'STOP IN THE ZONE',
     timeLimit: s => 3400/s,
     start(ctx){
-      const wrap = document.createElement('div');
-      wrap.style.width='100%';
-      wrap.style.display='flex'; wrap.style.flexDirection='column';
-      wrap.style.alignItems='center'; wrap.style.gap='22px';
+      const wrap = MR.makeEl('', { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '22px' });
 
-      const track = document.createElement('div');
-      track.style.position='relative';
-      track.style.width='100%'; track.style.height='16px';
-      track.style.background='var(--bezel)';
-      track.style.borderRadius='8px';
-      track.style.boxShadow='inset 0 0 0 1px var(--line)';
+      const track = MR.makeEl('', { position: 'relative', width: '100%', height: '16px', background: 'var(--bezel)', borderRadius: '8px', boxShadow: 'inset 0 0 0 1px var(--line)' });
 
       const zoneStart = MR.rand(30,60);
       const zoneWidth = 16;
-      const zone = document.createElement('div');
-      zone.style.position='absolute'; zone.style.top='0'; zone.style.bottom='0';
-      zone.style.left = zoneStart+'%'; zone.style.width = zoneWidth+'%';
-      zone.style.background='var(--go)'; zone.style.borderRadius='8px';
+      const zone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', left: zoneStart+'%', width: zoneWidth+'%', background: 'var(--go)', borderRadius: '8px' });
       track.appendChild(zone);
 
-      const marker = document.createElement('div');
-      marker.style.position='absolute'; marker.style.top='-5px';
-      marker.style.width='6px'; marker.style.height='26px';
-      marker.style.background='var(--flash)'; marker.style.borderRadius='3px';
+      const marker = MR.makeEl('', { position: 'absolute', top: '-5px', width: '6px', height: '26px', background: 'var(--flash)', borderRadius: '3px' });
       track.appendChild(marker);
 
       wrap.appendChild(track);
 
-      const btn = document.createElement('div');
-      btn.className='cell';
-      btn.style.padding='14px 30px'; btn.style.cursor='pointer';
-      btn.style.fontFamily='var(--display)'; btn.style.fontSize='16px';
+      const btn = MR.makeEl('cell', { padding: '14px 30px', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '16px' });
       btn.textContent='STOP';
       wrap.appendChild(btn);
       MR.stage.appendChild(wrap);
@@ -226,43 +180,19 @@
     word: 'FILL & RELEASE',
     timeLimit: s => 3600/s,
     start(ctx){
-      const wrap = document.createElement('div');
-      wrap.style.display='flex'; wrap.style.alignItems='center'; wrap.style.justifyContent='center';
-      wrap.style.gap='26px'; wrap.style.width='100%'; wrap.style.height='100%';
+      const wrap = MR.makeEl('', { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '26px', width: '100%', height: '100%' });
 
-      const gauge = document.createElement('div');
-      gauge.style.position='relative';
-      gauge.style.width='30px'; gauge.style.height='72%';
-      gauge.style.background='var(--bezel)';
-      gauge.style.borderRadius='8px';
-      gauge.style.boxShadow='inset 0 0 0 1px var(--line)';
-      gauge.style.overflow='hidden';
+      const gauge = MR.makeEl('', { position: 'relative', width: '30px', height: '72%', background: 'var(--bezel)', borderRadius: '8px', boxShadow: 'inset 0 0 0 1px var(--line)', overflow: 'hidden' });
 
       const zoneWidth = 18;
       const zoneStart = MR.rand(50, 74);
-      const zone = document.createElement('div');
-      zone.style.position='absolute'; zone.style.left='0'; zone.style.right='0';
-      zone.style.bottom = zoneStart+'%'; zone.style.height = zoneWidth+'%';
-      zone.style.background='var(--go)'; zone.style.opacity='0.4';
+      const zone = MR.makeEl('', { position: 'absolute', left: '0', right: '0', bottom: zoneStart+'%', height: zoneWidth+'%', background: 'var(--go)', opacity: '0.4' });
       gauge.appendChild(zone);
 
-      const fill = document.createElement('div');
-      fill.style.position='absolute'; fill.style.left='0'; fill.style.right='0'; fill.style.bottom='0';
-      fill.style.height='0%';
-      fill.style.background='var(--flash)';
+      const fill = MR.makeEl('', { position: 'absolute', left: '0', right: '0', bottom: '0', height: '0%', background: 'var(--flash)' });
       gauge.appendChild(fill);
 
-      const balloon = document.createElement('div');
-      balloon.style.width='96px'; balloon.style.height='96px';
-      balloon.style.borderRadius='50%';
-      balloon.style.background='var(--danger)';
-      balloon.style.transformOrigin='center';
-      balloon.style.transform='scale(0.55)';
-      balloon.style.cursor='pointer';
-      balloon.style.touchAction='none';
-      balloon.style.display='flex'; balloon.style.alignItems='center'; balloon.style.justifyContent='center';
-      balloon.style.fontFamily='var(--display)'; balloon.style.fontWeight='900';
-      balloon.style.fontSize='13px'; balloon.style.color='#0b0b10';
+      const balloon = MR.makeEl('', { width: '96px', height: '96px', borderRadius: '50%', background: 'var(--danger)', transformOrigin: 'center', transform: 'scale(0.55)', cursor: 'pointer', touchAction: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--display)', fontWeight: '900', fontSize: '13px', color: '#0b0b10' });
       balloon.textContent='HOLD';
 
       wrap.appendChild(gauge);
@@ -299,12 +229,14 @@
       }
       MR.rafId = requestAnimationFrame(loop);
 
+      const capture = MR.pointerCaptureTracker(balloon);
       balloon.addEventListener('pointerdown', (e)=>{
         if(!alive) return;
         holding = true;
-        balloon.setPointerCapture(e.pointerId);
+        capture.onDown(e);
       });
-      function release(){
+      function release(e){
+        capture.onUp(e);
         if(!alive || !holding) return;
         holding = false;
         alive = false;
@@ -315,7 +247,14 @@
       balloon.addEventListener('pointerup', release);
       balloon.addEventListener('pointercancel', release);
 
-      ctx.onCleanup = ()=>{ alive=false; holding=false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
+      ctx.onCleanup = ()=>{
+        alive=false; holding=false;
+        if(MR.rafId) cancelAnimationFrame(MR.rafId);
+        // pop() can end the round via the timer while the balloon is still
+        // physically held down, i.e. before any pointerup/pointercancel
+        // fires — release() above never runs in that case, so do it here.
+        capture.release();
+      };
     }
   });
 
@@ -327,13 +266,9 @@
     timeLimit: s => 3600/s,
     start(ctx){
       const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const player = document.createElement('div');
-      player.className='box';
-      player.style.width='34px'; player.style.height='34px';
-      player.style.background='var(--go)';
+      const player = MR.makeEl('box', { width: '34px', height: '34px', background: 'var(--go)' });
       let px = w/2 - 17;
-      player.style.left = px+'px';
-      player.style.bottom = '10px';
+      MR.styleEl(player, { left: px+'px', bottom: '10px' });
       MR.stage.appendChild(player);
 
       const blocks = [];
@@ -343,13 +278,8 @@
       let sinceSpawn = 0;
 
       function spawnBlock(){
-        const b = document.createElement('div');
-        b.className='box';
-        b.style.width='30px'; b.style.height='16px';
-        b.style.background='var(--danger)';
         const bx = MR.rand(0, w-30);
-        b.style.left = bx+'px';
-        b.style.top = '-16px';
+        const b = MR.makeEl('box', { width: '30px', height: '16px', background: 'var(--danger)', left: bx+'px', top: '-16px' });
         MR.stage.appendChild(b);
         blocks.push({el:b, x:bx, y:-16});
       }
@@ -364,14 +294,8 @@
       });
       // tap zones live on an element created fresh each round, so they're
       // wiped by clearStage() and never pile up across repeated rounds
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer';
-      });
-      leftZone.style.left='0';
-      rightZone.style.right='0';
+      const leftZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', left: '0' });
+      const rightZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', right: '0' });
       leftZone.addEventListener('click', ()=>move(-34));
       rightZone.addEventListener('click', ()=>move(34));
       MR.stage.appendChild(leftZone);
@@ -420,12 +344,7 @@
       const paddleBottom = 12; // distance from stage bottom
       let padX = w/2 - paddleW/2;
 
-      const paddle = document.createElement('div');
-      paddle.className = 'box';
-      paddle.style.width = paddleW+'px'; paddle.style.height = paddleH+'px';
-      paddle.style.background = 'var(--go)';
-      paddle.style.bottom = paddleBottom+'px';
-      paddle.style.left = padX+'px';
+      const paddle = MR.makeEl('box', { width: paddleW+'px', height: paddleH+'px', background: 'var(--go)', bottom: paddleBottom+'px', left: padX+'px' });
       MR.stage.appendChild(paddle);
 
       function movePaddle(dx){
@@ -437,24 +356,15 @@
         if(e.key==='ArrowRight') movePaddle(32);
       });
       // tap zones live on elements created fresh each round, wiped by clearStage()
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer';
-      });
-      leftZone.style.left='0';
-      rightZone.style.right='0';
+      const leftZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', left: '0' });
+      const rightZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', right: '0' });
       leftZone.addEventListener('click', ()=>movePaddle(-38));
       rightZone.addEventListener('click', ()=>movePaddle(38));
       MR.stage.appendChild(leftZone);
       MR.stage.appendChild(rightZone);
 
       const r = 7;
-      const ball = document.createElement('div');
-      ball.className = 'dot';
-      ball.style.width = (r*2)+'px'; ball.style.height = (r*2)+'px';
-      ball.style.background = 'var(--flash)';
+      const ball = MR.makeEl('dot', { width: (r*2)+'px', height: (r*2)+'px', background: 'var(--flash)' });
       MR.stage.appendChild(ball);
 
       // paddle sits near the bottom, in the same top-down coordinate space
@@ -470,8 +380,7 @@
       let vy = Math.cos(launchAngle) * baseSpeed;
 
       function placeBall(){
-        ball.style.left = (bxp-r)+'px';
-        ball.style.top = (byp-r)+'px';
+        MR.styleEl(ball, { left: (bxp-r)+'px', top: (byp-r)+'px' });
       }
       placeBall();
 
@@ -523,13 +432,7 @@
       let bx = w/2 - basketW/2;
       const basketY = 10; // distance from bottom
 
-      const basket = document.createElement('div');
-      basket.className = 'box';
-      basket.style.width = basketW+'px'; basket.style.height = basketH+'px';
-      basket.style.background = 'var(--flash)';
-      basket.style.borderRadius = '4px 4px 10px 10px';
-      basket.style.bottom = basketY+'px';
-      basket.style.left = bx+'px';
+      const basket = MR.makeEl('box', { width: basketW+'px', height: basketH+'px', background: 'var(--flash)', borderRadius: '4px 4px 10px 10px', bottom: basketY+'px', left: bx+'px' });
       MR.stage.appendChild(basket);
 
       // Continuous, hold-to-move control (rather than a fixed step per
@@ -558,14 +461,8 @@
       window.addEventListener('keyup', onKeyUp);
 
       // tap-and-hold zones live on elements created fresh each round, wiped by clearStage()
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer'; z.style.touchAction='none';
-      });
-      leftZone.style.left='0';
-      rightZone.style.right='0';
+      const leftZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', touchAction: 'none', left: '0' });
+      const rightZone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', width: '50%', cursor: 'pointer', touchAction: 'none', right: '0' });
       leftZone.addEventListener('pointerdown', ()=>{ goLeft = true; });
       rightZone.addEventListener('pointerdown', ()=>{ goRight = true; });
       function releaseLeft(){ goLeft = false; }
@@ -581,12 +478,7 @@
 
       const MIN_GOOD = 2;
       let goodCaught = 0;
-      const progress = document.createElement('div');
-      progress.style.position = 'absolute';
-      progress.style.top = '8px'; progress.style.left = '0'; progress.style.right = '0';
-      progress.style.textAlign = 'center';
-      progress.style.fontSize = '11px'; progress.style.letterSpacing = '0.08em';
-      progress.style.color = 'var(--dim)';
+      const progress = MR.makeEl('', { position: 'absolute', top: '8px', left: '0', right: '0', textAlign: 'center', fontSize: '11px', letterSpacing: '0.08em', color: 'var(--dim)' });
       function renderProgress(){
         progress.innerHTML = 'CAUGHT <span style="color:var(--go);font-weight:700">' + goodCaught + '</span>/' + MIN_GOOD;
       }
@@ -621,13 +513,8 @@
         const lo = Math.max(0, basketCenter - maxReach);
         const hi = Math.min(w-dropSize, basketCenter + maxReach - dropSize);
         const dx = hi > lo ? MR.rand(lo, hi) : Math.max(0, Math.min(w-dropSize, basketCenter - dropSize/2));
-        const el = document.createElement('div');
-        el.className = bad ? 'box' : 'dot';
-        el.style.width = dropSize+'px'; el.style.height = dropSize+'px';
-        el.style.background = bad ? 'var(--danger)' : 'var(--go)';
-        if(bad){ el.style.transform = 'rotate(45deg)'; el.style.borderRadius='4px'; }
-        el.style.left = dx+'px';
-        el.style.top = '-'+dropSize+'px';
+        const el = MR.makeEl(bad ? 'box' : 'dot', { width: dropSize+'px', height: dropSize+'px', background: bad ? 'var(--danger)' : 'var(--go)', left: dx+'px', top: '-'+dropSize+'px' });
+        if(bad){ MR.styleEl(el, { transform: 'rotate(45deg)', borderRadius: '4px' }); }
         MR.stage.appendChild(el);
         active = { el, x:dx, y:-dropSize, bad, fallSpeed };
       }
@@ -693,28 +580,14 @@
 
       // safe-band ring, drawn once and never touched again — only the
       // orbiting dot's color communicates in/out-of-band state as it moves
-      const band = document.createElement('div');
-      band.style.position = 'absolute';
-      band.style.left = (cx-targetR-tolerance)+'px';
-      band.style.top = (cy-targetR-tolerance)+'px';
-      band.style.width = (2*(targetR+tolerance))+'px';
-      band.style.height = (2*(targetR+tolerance))+'px';
-      band.style.borderRadius = '50%';
-      band.style.boxShadow = 'inset 0 0 0 '+(2*tolerance)+'px rgba(62,245,192,0.14)';
-      band.style.border = '1px solid rgba(62,245,192,0.4)';
+      const band = MR.makeEl('', { position: 'absolute', left: (cx-targetR-tolerance)+'px', top: (cy-targetR-tolerance)+'px', width: (2*(targetR+tolerance))+'px', height: (2*(targetR+tolerance))+'px', borderRadius: '50%', boxShadow: 'inset 0 0 0 '+(2*tolerance)+'px rgba(62,245,192,0.14)', border: '1px solid rgba(62,245,192,0.4)' });
       MR.stage.appendChild(band);
 
       // still pivot marker at the center
-      const pivot = document.createElement('div');
-      pivot.className = 'dot';
-      pivot.style.width='6px'; pivot.style.height='6px';
-      pivot.style.background='var(--dim)';
-      pivot.style.left=(cx-3)+'px'; pivot.style.top=(cy-3)+'px';
+      const pivot = MR.makeEl('dot', { width: '6px', height: '6px', background: 'var(--dim)', left: (cx-3)+'px', top: (cy-3)+'px' });
       MR.stage.appendChild(pivot);
 
-      const dot = document.createElement('div');
-      dot.className = 'dot';
-      dot.style.width='22px'; dot.style.height='22px';
+      const dot = MR.makeEl('dot', { width: '22px', height: '22px' });
       MR.stage.appendChild(dot);
 
       let r = targetR;
@@ -735,13 +608,7 @@
       const staticR = targetR + MR.rand(-staticRange, staticRange);
       const staticX = cx + Math.cos(staticAngle)*staticR;
       const staticY = cy + Math.sin(staticAngle)*staticR;
-      const staticEl = document.createElement('div');
-      staticEl.style.position = 'absolute';
-      staticEl.style.width = staticSize+'px'; staticEl.style.height = staticSize+'px';
-      staticEl.style.left = (staticX-staticSize/2)+'px'; staticEl.style.top = (staticY-staticSize/2)+'px';
-      staticEl.style.borderRadius = '50%';
-      staticEl.style.background = 'var(--life)';
-      staticEl.style.boxShadow = '0 0 10px rgba(181,101,245,0.65)';
+      const staticEl = MR.makeEl('', { position: 'absolute', width: staticSize+'px', height: staticSize+'px', left: (staticX-staticSize/2)+'px', top: (staticY-staticSize/2)+'px', borderRadius: '50%', background: 'var(--life)', boxShadow: '0 0 10px rgba(181,101,245,0.65)' });
       MR.stage.appendChild(staticEl);
 
       // asteroids that spawn off one edge of the screen and fly straight
@@ -765,12 +632,7 @@
         // shorter crossing time at higher difficulty = a visibly faster rock
         const crossTime = MR.rand(1500,2300) / ctx.speedMul;
         const speed = dist/crossTime; // px/ms
-        const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = astSize+'px'; el.style.height = astSize+'px';
-        el.style.borderRadius = '50%';
-        el.style.background = 'var(--danger)';
-        el.style.boxShadow = '0 0 10px rgba(255,62,127,0.6)';
+        const el = MR.makeEl('', { position: 'absolute', width: astSize+'px', height: astSize+'px', borderRadius: '50%', background: 'var(--danger)', boxShadow: '0 0 10px rgba(255,62,127,0.6)' });
         MR.stage.appendChild(el);
         asteroids.push({ x: sx, y: sy, vx: dx/dist*speed, vy: dy/dist*speed, el });
       }
@@ -801,8 +663,7 @@
         const x = cx + Math.cos(theta)*r;
         const y = cy + Math.sin(theta)*r;
         dotCx = x; dotCy = y;
-        dot.style.left = (x-11)+'px';
-        dot.style.top = (y-11)+'px';
+        MR.styleEl(dot, { left: (x-11)+'px', top: (y-11)+'px' });
         const dev = Math.abs(r-targetR);
         const inBand = dev <= tolerance;
         dot.style.background = inBand ? 'var(--go)' : (dev > hardOut ? 'var(--danger)' : 'var(--flash)');
@@ -826,18 +687,9 @@
 
       // tap-and-hold zones, top half nudges the orbit out, bottom half in —
       // wiped along with everything else in #stage by clearStage()
-      const outZone = document.createElement('div');
-      const inZone = document.createElement('div');
-      [outZone, inZone].forEach(z=>{
-        z.style.position='absolute'; z.style.left='0'; z.style.right='0'; z.style.height='50%';
-        z.style.cursor='pointer'; z.style.touchAction='none';
-        z.style.display='flex'; z.style.justifyContent='center';
-        z.style.fontSize='10px'; z.style.letterSpacing='0.14em'; z.style.textTransform='uppercase';
-        z.style.color='rgba(242,240,234,0.16)';
-      });
-      outZone.style.top='0'; outZone.style.alignItems='flex-start'; outZone.style.paddingTop='10px';
+      const outZone = MR.makeEl('', { position: 'absolute', left: '0', right: '0', height: '50%', cursor: 'pointer', touchAction: 'none', display: 'flex', justifyContent: 'center', fontSize: '10px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(242,240,234,0.16)', top: '0', alignItems: 'flex-start', paddingTop: '10px' });
       outZone.textContent = '↑ out';
-      inZone.style.bottom='0'; inZone.style.alignItems='flex-end'; inZone.style.paddingBottom='10px';
+      const inZone = MR.makeEl('', { position: 'absolute', left: '0', right: '0', height: '50%', cursor: 'pointer', touchAction: 'none', display: 'flex', justifyContent: 'center', fontSize: '10px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(242,240,234,0.16)', bottom: '0', alignItems: 'flex-end', paddingBottom: '10px' });
       inZone.textContent = '↓ in';
       outZone.addEventListener('pointerdown', ()=>{ holdOut = true; });
       inZone.addEventListener('pointerdown', ()=>{ holdIn = true; });

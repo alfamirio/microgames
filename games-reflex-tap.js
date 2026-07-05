@@ -11,27 +11,18 @@
     word: 'FIND IT',
     timeLimit: s => 3200/s,
     start(ctx){
-      const wrap = document.createElement('div');
-      wrap.style.display='grid';
-      wrap.style.gridTemplateColumns='repeat(4, 1fr)';
-      wrap.style.gap='10px';
-      wrap.style.width='100%';
       const colors = ['#3ef5c0','#ff3e7f','#f4e94c','#6b6580'];
       const baseColor = MR.pick(colors);
       let oddColor = MR.pick(colors.filter(c=>c!==baseColor));
       const n = 12;
       const oddIdx = Math.floor(Math.random()*n);
-      for(let i=0;i<n;i++){
-        const cell = document.createElement('div');
-        cell.className='cell';
-        cell.style.aspectRatio='1';
+      const { wrap, cells } = MR.makeGrid(3, 4, { cellStyles: { aspectRatio: '1', cursor: 'pointer' } });
+      cells.forEach((cell,i)=>{
         cell.style.background = (i===oddIdx? oddColor : baseColor);
-        cell.style.cursor='pointer';
         cell.addEventListener('click', ()=>{
           if(i===oddIdx) ctx.onWin(); else ctx.onLose();
         });
-        wrap.appendChild(cell);
-      }
+      });
       MR.stage.appendChild(wrap);
     }
   });
@@ -45,13 +36,8 @@
     start(ctx){
       const need = Math.round(3 + Math.random()*3);
       let count = 0;
-      const btn = document.createElement('div');
-      btn.className = 'target';
-      btn.style.width='140px'; btn.style.height='140px';
-      btn.style.fontFamily='var(--display)';
-      btn.style.fontSize='38px'; btn.style.color='#0b0b10'; btn.style.fontWeight='900';
+      const btn = MR.makeEl('target', { width: '140px', height: '140px', fontFamily: 'var(--display)', fontSize: '38px', color: '#0b0b10', fontWeight: '900', cursor: 'pointer' });
       btn.textContent = need;
-      btn.style.cursor='pointer';
       btn.addEventListener('click', ()=>{
         count++;
         btn.textContent = Math.max(need-count,0);
@@ -70,22 +56,14 @@
     word: 'TAP LIT',
     timeLimit: s => 2200/s,
     start(ctx){
-      const grid = document.createElement('div');
-      grid.style.display='grid';
-      grid.style.gridTemplateColumns='repeat(3, 1fr)';
-      grid.style.gap='12px';
-      grid.style.width='100%';
       const litIdx = Math.floor(Math.random()*9);
-      for(let i=0;i<9;i++){
-        const cell = document.createElement('div');
-        cell.className='cell' + (i===litIdx? ' lit':'');
-        cell.style.aspectRatio='1';
-        cell.style.cursor='pointer';
+      const { wrap: grid, cells } = MR.makeGrid(3, 3, { gap: '12px', cellStyles: { aspectRatio: '1', cursor: 'pointer' } });
+      cells.forEach((cell,i)=>{
+        if(i===litIdx) cell.classList.add('lit');
         cell.addEventListener('click', ()=>{
           if(i===litIdx) ctx.onWin(); else ctx.onLose();
         });
-        grid.appendChild(cell);
-      }
+      });
       MR.stage.appendChild(grid);
     }
   });
@@ -97,12 +75,7 @@
     word: 'CATCH IT',
     timeLimit: s => 2600/s,
     start(ctx){
-      const target = document.createElement('div');
-      target.className='target';
-      target.style.width='90px'; target.style.height='90px';
-      target.style.left = MR.rand(10,60)+'%';
-      target.style.top = MR.rand(10,60)+'%';
-      target.style.cursor='pointer';
+      const target = MR.makeEl('target', { width: '90px', height: '90px', left: MR.rand(10,60)+'%', top: MR.rand(10,60)+'%', cursor: 'pointer' });
       MR.stage.appendChild(target);
       target.addEventListener('click', ()=>ctx.onWin());
       let scale = 1;
@@ -129,13 +102,7 @@
     timeLimit: s => 2200/s,
     start(ctx){
       const isGreen = Math.random() > 0.4;
-      const target = document.createElement('div');
-      target.className='target';
-      target.style.background = isGreen ? 'var(--go)' : 'var(--danger)';
-      target.style.width='120px'; target.style.height='120px';
-      target.style.cursor='pointer';
-      target.style.fontFamily='var(--display)';
-      target.style.fontSize='16px'; target.style.color='#0b0b10'; target.style.fontWeight='900';
+      const target = MR.makeEl('target', { background: isGreen ? 'var(--go)' : 'var(--danger)', width: '120px', height: '120px', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '16px', color: '#0b0b10', fontWeight: '900' });
       target.textContent = isGreen ? 'GO' : 'STOP';
       MR.stage.appendChild(target);
       target.addEventListener('click', ()=>{
@@ -156,18 +123,11 @@
       const n = Math.floor(Math.random() * 3) + 1;
       let remaining = n;
       for(let i=0;i<n;i++){
-        const d = document.createElement('div');
-        d.className='target';
-        d.style.width='44px'; d.style.height='44px';
-        d.style.left = MR.rand(6,80)+'%';
-        d.style.top = MR.rand(6,78)+'%';
-        d.style.cursor='pointer';
-        d.style.transition='transform .12s, opacity .12s';
+        const d = MR.makeEl('target', { width: '44px', height: '44px', left: MR.rand(6,80)+'%', top: MR.rand(6,78)+'%', cursor: 'pointer', transition: 'transform .12s, opacity .12s' });
         d.addEventListener('click', ()=>{
           if(d.dataset.popped) return;
           d.dataset.popped = '1';
-          d.style.transform='scale(0)';
-          d.style.opacity='0';
+          MR.styleEl(d, { transform: 'scale(0)', opacity: '0' });
           remaining--;
           if(remaining<=0) ctx.onWin();
         });
@@ -193,31 +153,21 @@
       let index = 0;
       let alive = true;
 
-      const wrap = document.createElement('div');
-      wrap.style.display='flex'; wrap.style.flexDirection='column';
-      wrap.style.alignItems='center'; wrap.style.gap='30px';
+      const wrap = MR.makeEl('', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '30px' });
 
-      const seqRow = document.createElement('div');
-      seqRow.style.display='flex'; seqRow.style.gap='12px';
+      const seqRow = MR.makeEl('', { display: 'flex', gap: '12px' });
       const boxes = sequence.map(dir=>{
-        const box = document.createElement('div');
-        box.className = 'cell';
-        box.style.width='58px'; box.style.height='58px';
-        box.style.display='flex'; box.style.alignItems='center'; box.style.justifyContent='center';
-        box.style.fontFamily='var(--display)'; box.style.fontSize='28px'; box.style.fontWeight='900';
+        const box = MR.makeEl('cell', { width: '58px', height: '58px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--display)', fontSize: '28px', fontWeight: '900' });
         box.textContent = dir.glyph;
         seqRow.appendChild(box);
         return box;
       });
       wrap.appendChild(seqRow);
 
-      const padRow = document.createElement('div');
-      padRow.style.display='flex'; padRow.style.gap='10px';
+      const padRow = MR.makeEl('', { display: 'flex', gap: '10px' });
       const arrowEls = {};
       DIRS.forEach(dir=>{
-        const key = document.createElement('div');
-        key.className = 'arrow-key';
-        key.style.cursor='pointer';
+        const key = MR.makeEl('arrow-key', { cursor: 'pointer' });
         key.textContent = dir.glyph;
         key.addEventListener('click', ()=> handleInput(dir.key));
         padRow.appendChild(key);
@@ -229,9 +179,9 @@
 
       function refresh(){
         boxes.forEach((box,i)=>{
-          if(i < index){ box.style.background='var(--go)'; box.style.color='#0b0b10'; }
-          else if(i === index){ box.style.background='var(--flash)'; box.style.color='#0b0b10'; }
-          else { box.style.background=''; box.style.color='var(--ink)'; }
+          if(i < index){ MR.styleEl(box, { background: 'var(--go)', color: '#0b0b10' }); }
+          else if(i === index){ MR.styleEl(box, { background: 'var(--flash)', color: '#0b0b10' }); }
+          else { MR.styleEl(box, { background: '', color: 'var(--ink)' }); }
         });
       }
       refresh();
@@ -272,30 +222,17 @@
     word: 'GREEN = GO',
     timeLimit: s => 4000/s,
     start(ctx){
-      const wrap = document.createElement('div');
-      wrap.style.display='flex'; wrap.style.flexDirection='column';
-      wrap.style.alignItems='center'; wrap.style.gap='20px'; wrap.style.width='100%';
+      const wrap = MR.makeEl('', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', width: '100%' });
 
-      const light = document.createElement('div');
-      light.style.width='70px'; light.style.height='70px'; light.style.borderRadius='50%';
-      light.style.background='var(--go)';
+      const light = MR.makeEl('', { width: '70px', height: '70px', borderRadius: '50%', background: 'var(--go)' });
       wrap.appendChild(light);
 
-      const track = document.createElement('div');
-      track.style.width='100%'; track.style.height='18px'; track.style.borderRadius='9px';
-      track.style.background='rgba(255,255,255,0.08)'; track.style.overflow='hidden';
-      const fill = document.createElement('div');
-      fill.style.height='100%'; fill.style.width='0%'; fill.style.background='var(--go)';
-      fill.style.transition='background .15s';
+      const track = MR.makeEl('', { width: '100%', height: '18px', borderRadius: '9px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' });
+      const fill = MR.makeEl('', { height: '100%', width: '0%', background: 'var(--go)', transition: 'background .15s' });
       track.appendChild(fill);
       wrap.appendChild(track);
 
-      const btn = document.createElement('div');
-      btn.className='target';
-      btn.style.width='140px'; btn.style.height='60px'; btn.style.borderRadius='14px';
-      btn.style.cursor='pointer';
-      btn.style.fontFamily='var(--display)'; btn.style.fontSize='14px';
-      btn.style.color='#0b0b10'; btn.style.fontWeight='900';
+      const btn = MR.makeEl('target', { width: '140px', height: '60px', borderRadius: '14px', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '14px', color: '#0b0b10', fontWeight: '900' });
       btn.textContent = 'HOLD';
       wrap.appendChild(btn);
 

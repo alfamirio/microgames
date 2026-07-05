@@ -15,17 +15,11 @@
       const playerR = 10, bulletR = 5;
       let px = w/2, py = h/2;
 
-      const player = document.createElement('div');
-      player.className = 'dot';
-      player.style.width = (playerR*2)+'px'; player.style.height = (playerR*2)+'px';
-      player.style.background = 'var(--go)';
-      player.style.boxShadow = '0 0 10px var(--go)';
-      player.style.touchAction = 'none';
+      const player = MR.makeEl('dot', { width: (playerR*2)+'px', height: (playerR*2)+'px', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', touchAction: 'none' });
       MR.stage.appendChild(player);
 
       function placePlayer(){
-        player.style.left = (px-playerR)+'px';
-        player.style.top = (py-playerR)+'px';
+        MR.styleEl(player, { left: (px-playerR)+'px', top: (py-playerR)+'px' });
       }
       placePlayer();
 
@@ -46,26 +40,26 @@
       // the stage, not just the dot itself, since a bullet-hell field
       // makes precisely grabbing a 20px target under fire unreasonable
       let dragging = false;
-      function pointerToStage(e){
-        const r = MR.stage.getBoundingClientRect();
-        return { x: e.clientX - r.left, y: e.clientY - r.top };
-      }
+      const capture = MR.pointerCaptureTracker(MR.stage);
       function onPointerDown(e){
         dragging = true;
-        MR.stage.setPointerCapture(e.pointerId);
-        const p = pointerToStage(e);
+        capture.onDown(e);
+        const p = MR.pointerPos(e);
         px = Math.max(playerR, Math.min(w-playerR, p.x));
         py = Math.max(playerR, Math.min(h-playerR, p.y));
         placePlayer();
       }
       function onPointerMove(e){
         if(!dragging) return;
-        const p = pointerToStage(e);
+        const p = MR.pointerPos(e);
         px = Math.max(playerR, Math.min(w-playerR, p.x));
         py = Math.max(playerR, Math.min(h-playerR, p.y));
         placePlayer();
       }
-      function onPointerUp(){ dragging = false; }
+      function onPointerUp(e){
+        dragging = false;
+        capture.onUp(e);
+      }
       MR.stage.addEventListener('pointerdown', onPointerDown);
       MR.stage.addEventListener('pointermove', onPointerMove);
       MR.stage.addEventListener('pointerup', onPointerUp);
@@ -76,11 +70,7 @@
       let elapsed = 0;
 
       function spawnBullet(x, y, vx, vy, color){
-        const el = document.createElement('div');
-        el.className = 'dot';
-        el.style.width = (bulletR*2)+'px'; el.style.height = (bulletR*2)+'px';
-        el.style.background = color || 'var(--danger)';
-        el.style.left = (x-bulletR)+'px'; el.style.top = (y-bulletR)+'px';
+        const el = MR.makeEl('dot', { width: (bulletR*2)+'px', height: (bulletR*2)+'px', background: color || 'var(--danger)', left: (x-bulletR)+'px', top: (y-bulletR)+'px' });
         MR.stage.appendChild(el);
         bullets.push({ el, x, y, vx, vy });
       }
@@ -157,6 +147,11 @@
         MR.stage.removeEventListener('pointermove', onPointerMove);
         MR.stage.removeEventListener('pointerup', onPointerUp);
         MR.stage.removeEventListener('pointercancel', onPointerUp);
+        // Round can end (timeout, or onLose from the rAF loop hitting a
+        // bullet) while the pointer is still physically down — release()
+        // covers that even though neither pointerup nor pointercancel
+        // fired to reach onPointerUp above.
+        capture.release();
       };
       // survive the whole round = win, handled by engine timeout
       ctx.survivalGame = true;
@@ -172,126 +167,46 @@
     start(ctx){
       const COLS = 6, ROWS = 6;
       const GAP = 6;
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const cellW = (w - (COLS-1)*GAP) / COLS;
-      const cellH = (h - (ROWS-1)*GAP) / ROWS;
 
-      function key(r,c){ return r*COLS+c; }
-
-      // pick a start/target pair far enough apart, then scatter walls,
-      // retrying until a BFS confirms a walkable path still exists —
-      // guarantees the round is always solvable, never a soft-lock
-      function bfsReachable(walls, start, target){
-        const seen = new Set([key(start.r,start.c)]);
-        const queue = [start];
-        while(queue.length){
-          const cur = queue.shift();
-          if(cur.r===target.r && cur.c===target.c) return true;
-          const neighbors = [[cur.r-1,cur.c],[cur.r+1,cur.c],[cur.r,cur.c-1],[cur.r,cur.c+1]];
-          for(const [nr,nc] of neighbors){
-            if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
-            const k = key(nr,nc);
-            if(seen.has(k) || walls.has(k)) continue;
-            seen.add(k);
-            queue.push({r:nr,c:nc});
-          }
-        }
-        return false;
-      }
-
-      function generateLayout(){
-        const minDist = Math.floor((COLS+ROWS)/2);
-        for(let attempt=0; attempt<40; attempt++){
-          const start = { r: Math.floor(MR.rand(0,ROWS)), c: Math.floor(MR.rand(0,COLS)) };
-          const target = { r: Math.floor(MR.rand(0,ROWS)), c: Math.floor(MR.rand(0,COLS)) };
-          const dist = Math.abs(start.r-target.r) + Math.abs(start.c-target.c);
-          if(dist < minDist) continue;
-          const walls = new Set();
-          const wallBudget = Math.floor(COLS*ROWS*0.28);
-          let guard = 0;
-          while(walls.size < wallBudget && guard < 200){
-            guard++;
-            const r = Math.floor(MR.rand(0,ROWS)), c = Math.floor(MR.rand(0,COLS));
-            const k = key(r,c);
-            if((r===start.r&&c===start.c) || (r===target.r&&c===target.c)) continue;
-            walls.add(k);
-          }
-          if(bfsReachable(walls, start, target)) return { start, target, walls };
-        }
-        return { start:{r:0,c:0}, target:{r:ROWS-1,c:COLS-1}, walls:new Set() };
-      }
-
-      const { start, target, walls } = generateLayout();
+      // a = start, b = target — same wallDensity/BFS-retry guarantee this
+      // game used before, now shared with MAZE-MUNCH via generateSolvableLayout
+      const { a: start, b: target, walls } = MR.generateSolvableLayout(COLS, ROWS, { wallDensity: 0.28 });
       let pr = start.r, pc = start.c;
-
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = '18px'; wrap.style.top = '18px';
-      wrap.style.width = w+'px'; wrap.style.height = h+'px';
-      MR.stage.appendChild(wrap);
-
-      const cellEls = [];
-      for(let r=0;r<ROWS;r++){
-        for(let c=0;c<COLS;c++){
-          const el = document.createElement('div');
-          el.className = 'cell';
-          el.style.position = 'absolute';
-          el.style.width = cellW+'px'; el.style.height = cellH+'px';
-          el.style.left = (c*(cellW+GAP))+'px';
-          el.style.top = (r*(cellH+GAP))+'px';
-          const isWall = walls.has(key(r,c));
-          if(isWall){
-            el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
-          } else {
-            el.style.cursor = 'pointer';
-            el.addEventListener('click', ()=> tryMoveTo(r,c));
-          }
-          wrap.appendChild(el);
-          cellEls[key(r,c)] = el;
-        }
-      }
-
-      const flag = document.createElement('div');
-      flag.style.position = 'absolute';
-      flag.style.width = (cellW*0.5)+'px'; flag.style.height = (cellH*0.5)+'px';
-      flag.style.borderRadius = '6px';
-      flag.style.background = 'var(--flash)';
-      flag.style.boxShadow = '0 0 10px var(--flash)';
-      flag.style.left = (target.c*(cellW+GAP) + cellW/2 - (cellW*0.25))+'px';
-      flag.style.top = (target.r*(cellH+GAP) + cellH/2 - (cellH*0.25))+'px';
-      wrap.appendChild(flag);
-
-      const player = document.createElement('div');
-      player.style.position = 'absolute';
-      player.style.width = (cellW*0.5)+'px'; player.style.height = (cellW*0.5)+'px';
-      player.style.borderRadius = '50%';
-      player.style.background = 'var(--go)';
-      player.style.boxShadow = '0 0 10px var(--go)';
-      player.style.transition = 'left 90ms ease, top 90ms ease';
-      wrap.appendChild(player);
-
-      function placePlayer(){
-        player.style.left = (pc*(cellW+GAP) + cellW/2 - player.clientWidth/2)+'px';
-        player.style.top = (pr*(cellH+GAP) + cellH/2 - player.clientHeight/2)+'px';
-      }
-      placePlayer();
-
       let alive = true;
 
       function tryMoveTo(r,c){
         if(!alive) return;
         if(r<0||r>=ROWS||c<0||c>=COLS) return;
-        if(walls.has(key(r,c))) return;
+        if(walls.has(grid.key(r,c))) return;
         // only step to orthogonally adjacent cells — no teleporting through walls
         if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
         pr = r; pc = c;
-        placePlayer();
+        grid.placeCenter(player, pr, pc);
         if(pr===target.r && pc===target.c){
           alive = false;
           ctx.onWin();
         }
       }
       function move(dr,dc){ tryMoveTo(pr+dr, pc+dc); }
+
+      const grid = MR.makeCellGrid(COLS, ROWS, { gap: GAP, onCellClick: (r,c)=> tryMoveTo(r,c) });
+      const { wrap, cellW, cellH } = grid;
+
+      grid.cells.forEach(cd=>{
+        if(walls.has(grid.key(cd.r,cd.c))){
+          cd.el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+        } else {
+          cd.el.style.cursor = 'pointer';
+        }
+      });
+
+      const flag = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellH*0.5)+'px', borderRadius: '6px', background: 'var(--flash)', boxShadow: '0 0 10px var(--flash)' });
+      wrap.appendChild(flag);
+      grid.placeCenter(flag, target.r, target.c);
+
+      const player = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellW*0.5)+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', transition: 'left 90ms ease, top 90ms ease' });
+      wrap.appendChild(player);
+      grid.placeCenter(player, pr, pc);
 
       MR.setKeyHandler((e)=>{
         if(e.key==='ArrowLeft') move(0,-1);
@@ -311,112 +226,39 @@
     start(ctx){
       const COLS = 6, ROWS = 6;
       const GAP = 5;
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const cellW = (w - (COLS-1)*GAP) / COLS;
-      const cellH = (h - (ROWS-1)*GAP) / ROWS;
 
-      function key(r,c){ return r*COLS+c; }
-      function neighborsOf(r,c){ return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]; }
-
-      // same solvability guarantee as PATH: retry layouts until a BFS
-      // confirms the ghost's start can actually reach the player's start,
-      // so the maze itself is never the thing that traps you
-      function bfsReachable(walls, from, to){
-        const seen = new Set([key(from.r,from.c)]);
-        const queue = [from];
-        while(queue.length){
-          const cur = queue.shift();
-          if(cur.r===to.r && cur.c===to.c) return true;
-          for(const [nr,nc] of neighborsOf(cur.r,cur.c)){
-            if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
-            const k = key(nr,nc);
-            if(seen.has(k) || walls.has(k)) continue;
-            seen.add(k);
-            queue.push({r:nr,c:nc});
-          }
-        }
-        return false;
-      }
-
-      // BFS from the ghost toward the player, returning just the *next*
-      // step along the shortest path (or the ghost's current cell if
-      // already there / unreachable) — recomputed every tick so the ghost
-      // re-routes live as the player moves instead of committing to a
-      // stale path.
-      function bfsNextStep(walls, from, to){
-        if(from.r===to.r && from.c===to.c) return from;
-        const seen = new Set([key(from.r,from.c)]);
-        const queue = [[from]];
-        while(queue.length){
-          const path = queue.shift();
-          const cur = path[path.length-1];
-          if(cur.r===to.r && cur.c===to.c) return path[1];
-          for(const [nr,nc] of neighborsOf(cur.r,cur.c)){
-            if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
-            const k = key(nr,nc);
-            if(seen.has(k) || walls.has(k)) continue;
-            seen.add(k);
-            queue.push(path.concat([{r:nr,c:nc}]));
-          }
-        }
-        return from;
-      }
-
-      function generateLayout(){
-        const minDist = Math.floor((COLS+ROWS)/2);
-        for(let attempt=0; attempt<40; attempt++){
-          const start = { r: Math.floor(MR.rand(0,ROWS)), c: Math.floor(MR.rand(0,COLS)) };
-          const ghostStart = { r: Math.floor(MR.rand(0,ROWS)), c: Math.floor(MR.rand(0,COLS)) };
-          const dist = Math.abs(start.r-ghostStart.r) + Math.abs(start.c-ghostStart.c);
-          if(dist < minDist) continue;
-          const walls = new Set();
-          const wallBudget = Math.floor(COLS*ROWS*0.2);
-          let guard = 0;
-          while(walls.size < wallBudget && guard < 200){
-            guard++;
-            const r = Math.floor(MR.rand(0,ROWS)), c = Math.floor(MR.rand(0,COLS));
-            const k = key(r,c);
-            if((r===start.r&&c===start.c) || (r===ghostStart.r&&c===ghostStart.c)) continue;
-            walls.add(k);
-          }
-          if(bfsReachable(walls, ghostStart, start)) return { start, ghostStart, walls };
-        }
-        return { start:{r:0,c:0}, ghostStart:{r:ROWS-1,c:COLS-1}, walls:new Set() };
-      }
-
-      const { start, ghostStart, walls } = generateLayout();
+      // a = start, b = ghostStart — same solvability guarantee as ESCAPE
+      // (reachability is symmetric either direction), now shared via
+      // generateSolvableLayout instead of a second copy of the retry loop
+      const { a: start, b: ghostStart, walls } = MR.generateSolvableLayout(COLS, ROWS, { wallDensity: 0.2 });
       let pr = start.r, pc = start.c;
       let gr = ghostStart.r, gc = ghostStart.c;
+      let alive = true;
 
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = '18px'; wrap.style.top = '18px';
-      wrap.style.width = w+'px'; wrap.style.height = h+'px';
-      MR.stage.appendChild(wrap);
+      function tryMoveTo(r,c){
+        if(!alive) return;
+        if(r<0||r>=ROWS||c<0||c>=COLS) return;
+        if(walls.has(grid.key(r,c))) return;
+        if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
+        pr = r; pc = c;
+        grid.placeCenter(player, pr, pc);
+        eatDotAt(pr,pc);
+        checkCollision();
+      }
+      function move(dr,dc){ tryMoveTo(pr+dr, pc+dc); }
+
+      const grid = MR.makeCellGrid(COLS, ROWS, { gap: GAP, onCellClick: (r,c)=> tryMoveTo(r,c) });
+      const { wrap, cellW, cellH } = grid;
 
       const openCells = [];
-      const cellEls = [];
-      for(let r=0;r<ROWS;r++){
-        for(let c=0;c<COLS;c++){
-          const el = document.createElement('div');
-          el.className = 'cell';
-          el.style.position = 'absolute';
-          el.style.width = cellW+'px'; el.style.height = cellH+'px';
-          el.style.left = (c*(cellW+GAP))+'px';
-          el.style.top = (r*(cellH+GAP))+'px';
-          const k = key(r,c);
-          const isWall = walls.has(k);
-          if(isWall){
-            el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
-          } else {
-            el.style.cursor = 'pointer';
-            el.addEventListener('click', ()=> tryMoveTo(r,c));
-            openCells.push({r,c});
-          }
-          wrap.appendChild(el);
-          cellEls[k] = el;
+      grid.cells.forEach(cd=>{
+        if(walls.has(grid.key(cd.r,cd.c))){
+          cd.el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+        } else {
+          cd.el.style.cursor = 'pointer';
+          openCells.push({ r: cd.r, c: cd.c });
         }
-      }
+      });
 
       // scatter a handful of dots rather than one on every open cell —
       // keeps a round clearable inside the timer instead of demanding a
@@ -428,51 +270,24 @@
       const dots = new Set();
       const dotEls = {};
       dotCandidates.slice(0, dotCount).forEach(cell=>{
-        const k = key(cell.r, cell.c);
+        const k = grid.key(cell.r, cell.c);
         dots.add(k);
-        const dot = document.createElement('div');
-        dot.style.position = 'absolute';
-        dot.style.width = '24%'; dot.style.height = '24%';
-        dot.style.borderRadius = '50%';
-        dot.style.background = 'var(--flash)';
-        dot.style.left = '50%'; dot.style.top = '50%';
-        dot.style.transform = 'translate(-50%,-50%)';
-        dot.style.boxShadow = '0 0 6px var(--flash)';
-        cellEls[k].appendChild(dot);
+        const dot = MR.makeEl('', { position: 'absolute', width: '24%', height: '24%', borderRadius: '50%', background: 'var(--flash)', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', boxShadow: '0 0 6px var(--flash)' });
+        grid.cells[k].el.appendChild(dot);
         dotEls[k] = dot;
       });
       let dotsRemaining = dots.size;
 
-      const player = document.createElement('div');
-      player.style.position = 'absolute';
-      player.style.width = (cellW*0.55)+'px'; player.style.height = (cellH*0.55)+'px';
-      player.style.borderRadius = '50%';
-      player.style.background = 'var(--go)';
-      player.style.boxShadow = '0 0 10px var(--go)';
-      player.style.transition = 'left 90ms ease, top 90ms ease';
+      const player = MR.makeEl('', { position: 'absolute', width: (cellW*0.55)+'px', height: (cellH*0.55)+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', transition: 'left 90ms ease, top 90ms ease' });
       wrap.appendChild(player);
+      grid.placeCenter(player, pr, pc);
 
-      const ghost = document.createElement('div');
-      ghost.style.position = 'absolute';
-      ghost.style.width = (cellW*0.6)+'px'; ghost.style.height = (cellH*0.6)+'px';
-      ghost.style.borderRadius = '50% 50% 10% 10%';
-      ghost.style.background = 'var(--danger)';
-      ghost.style.boxShadow = '0 0 10px var(--danger)';
-      ghost.style.transition = 'left 240ms linear, top 240ms linear';
+      const ghost = MR.makeEl('', { position: 'absolute', width: (cellW*0.6)+'px', height: (cellH*0.6)+'px', borderRadius: '50% 50% 10% 10%', background: 'var(--danger)', boxShadow: '0 0 10px var(--danger)', transition: 'left 240ms linear, top 240ms linear' });
       wrap.appendChild(ghost);
-
-      function placeAt(el, r, c){
-        el.style.left = (c*(cellW+GAP) + cellW/2 - el.clientWidth/2)+'px';
-        el.style.top = (r*(cellH+GAP) + cellH/2 - el.clientHeight/2)+'px';
-      }
-      function placePlayer(){ placeAt(player, pr, pc); }
-      function placeGhost(){ placeAt(ghost, gr, gc); }
-      placePlayer(); placeGhost();
-
-      let alive = true;
+      grid.placeCenter(ghost, gr, gc);
 
       function eatDotAt(r,c){
-        const k = key(r,c);
+        const k = grid.key(r,c);
         if(!dots.has(k)) return;
         dots.delete(k);
         dotEls[k].remove();
@@ -491,18 +306,6 @@
         }
       }
 
-      function tryMoveTo(r,c){
-        if(!alive) return;
-        if(r<0||r>=ROWS||c<0||c>=COLS) return;
-        if(walls.has(key(r,c))) return;
-        if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
-        pr = r; pc = c;
-        placePlayer();
-        eatDotAt(pr,pc);
-        checkCollision();
-      }
-      function move(dr,dc){ tryMoveTo(pr+dr, pc+dc); }
-
       MR.setKeyHandler((e)=>{
         if(e.key==='ArrowLeft') move(0,-1);
         if(e.key==='ArrowRight') move(0,1);
@@ -515,10 +318,10 @@
       const ghostStepMs = Math.max(230, 480/ctx.speedMul);
       const ghostTimer = setInterval(()=>{
         if(!alive) return;
-        const next = bfsNextStep(walls, {r:gr,c:gc}, {r:pr,c:pc});
+        const next = MR.bfsNextStep(COLS, ROWS, walls, {r:gr,c:gc}, {r:pr,c:pc});
         if(next.r!==gr || next.c!==gc){
           gr = next.r; gc = next.c;
-          placeGhost();
+          grid.placeCenter(ghost, gr, gc);
         }
         checkCollision();
       }, ghostStepMs);
@@ -537,35 +340,25 @@
     timeLimit: s => 4000/s,
     start(ctx){
       const COLS = 12, ROWS = 12;
-      const w = MR.screen.clientWidth - 30, h = MR.screen.clientHeight - 30;
-      const cellW = w/COLS, cellH = h/ROWS;
 
-      function key(r,c){ return r*COLS+c; }
-
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = '15px'; wrap.style.top = '15px';
-      wrap.style.width = w+'px'; wrap.style.height = h+'px';
-      MR.stage.appendChild(wrap);
+      // SNAKE doesn't want the bordered `.cell` tile look — same pixel
+      // grid math (and same 30px margin/no-gap layout) as before, just
+      // borderless cells via the shared grid builder's cellClass option
+      const grid = MR.makeCellGrid(COLS, ROWS, { gap: 0, margin: 30, cellClass: '' });
+      const { wrap, cellW, cellH } = grid;
+      const key = grid.key;
 
       function makeSegEl(){
-        const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = Math.max(2,cellW-2)+'px'; el.style.height = Math.max(2,cellH-2)+'px';
-        el.style.borderRadius = '4px';
-        el.style.background = 'var(--go)';
-        return el;
+        return MR.makeEl('', { position: 'absolute', width: Math.max(2,cellW-2)+'px', height: Math.max(2,cellH-2)+'px', borderRadius: '4px', background: 'var(--go)' });
       }
       function positionEl(el, r, c){
-        el.style.left = (c*cellW+1)+'px';
-        el.style.top = (r*cellH+1)+'px';
+        MR.styleEl(el, { left: (c*cellW+1)+'px', top: (r*cellH+1)+'px' });
       }
       // head gets a glow so it reads as the "front" of the snake at a glance
       function refreshHeadStyle(){
         bodyEls.forEach((el,i)=>{
           const isHead = i === bodyEls.length-1;
-          el.style.boxShadow = isHead ? '0 0 8px var(--go)' : 'none';
-          el.style.opacity = isHead ? '1' : '0.82';
+          MR.styleEl(el, { boxShadow: isHead ? '0 0 8px var(--go)' : 'none', opacity: isHead ? '1' : '0.82' });
         });
       }
 
@@ -603,15 +396,9 @@
         return null;
       }
       function makePelletEl(cell, color, round){
-        const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = (cellW*0.5)+'px'; el.style.height = (cellH*0.5)+'px';
-        el.style.left = (cell.c*cellW + cellW*0.25)+'px';
-        el.style.top = (cell.r*cellH + cellH*0.25)+'px';
-        el.style.borderRadius = round ? '50%' : '3px';
-        el.style.background = color;
-        el.style.boxShadow = '0 0 8px '+color;
+        const el = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellH*0.5)+'px', borderRadius: round ? '50%' : '3px', background: color, boxShadow: '0 0 8px '+color });
         wrap.appendChild(el);
+        grid.placeCenter(el, cell.r, cell.c);
         return el;
       }
       function spawnFruit(){

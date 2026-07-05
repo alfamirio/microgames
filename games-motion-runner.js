@@ -17,11 +17,7 @@
       const playerW = 24;
       const px = Math.round((w - playerW) / 2);
 
-      const player = document.createElement('div');
-      player.className = 'box';
-      player.style.width = playerW+'px';
-      player.style.background = 'var(--go)';
-      player.style.left = px+'px';
+      const player = MR.makeEl('box', { width: playerW+'px', background: 'var(--go)', left: px+'px' });
       MR.stage.appendChild(player);
 
       let state = 'stand'; // 'stand' | 'jump' | 'duck'
@@ -37,8 +33,7 @@
         return groundY;
       }
       function applyVisual(){
-        player.style.height = (state==='duck' ? duckH : standH)+'px';
-        player.style.bottom = currentPlayerBottom()+'px';
+        MR.styleEl(player, { height: (state==='duck' ? duckH : standH)+'px', bottom: currentPlayerBottom()+'px' });
       }
       applyVisual();
 
@@ -51,14 +46,7 @@
       });
 
       // tap zones live on elements created fresh each round, wiped by clearStage()
-      const topZone = document.createElement('div');
-      const bottomZone = document.createElement('div');
-      [topZone, bottomZone].forEach(z=>{
-        z.style.position='absolute'; z.style.left='0'; z.style.right='0'; z.style.height='50%';
-        z.style.cursor='pointer';
-      });
-      topZone.style.top='0';
-      bottomZone.style.bottom='0';
+      const [topZone, bottomZone] = MR.splitZones(false);
       topZone.addEventListener('click', doJump);
       bottomZone.addEventListener('click', doDuck);
       MR.stage.appendChild(topZone);
@@ -74,14 +62,7 @@
       let sinceSpawn = spawnEvery*0.5;
 
       function makeObstacle(x, ow, oh, bottom, isBird){
-        const el = document.createElement('div');
-        el.className='box';
-        el.style.background = isBird ? 'var(--flash)' : 'var(--danger)';
-        el.style.width = ow+'px';
-        el.style.height = oh+'px';
-        el.style.borderRadius = isBird ? '8px' : '4px';
-        el.style.bottom = bottom+'px';
-        el.style.left = x+'px';
+        const el = MR.makeEl('box', { background: isBird ? 'var(--flash)' : 'var(--danger)', width: ow+'px', height: oh+'px', borderRadius: isBird ? '8px' : '4px', bottom: bottom+'px', left: x+'px' });
         MR.stage.appendChild(el);
         obstacles.push({ el, x, w:ow, h:oh, bottom });
       }
@@ -151,52 +132,22 @@
     timeLimit: s => 5200/s,
     start(ctx){
       const COLS = 4, ROWS = 6;
-      const GAP = 5;
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const cellW = (w - (COLS-1)*GAP) / COLS;
-      const cellH = (h - (ROWS-1)*GAP) / ROWS;
-
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = '18px'; wrap.style.top = '18px';
-      wrap.style.width = w+'px'; wrap.style.height = h+'px';
-      MR.stage.appendChild(wrap);
 
       // state per cell: 'safe' -> 'warn' (flashing) -> 'lava' (deadly) -> back to 'safe'
-      const cells = [];
-      for(let r=0;r<ROWS;r++){
-        for(let c=0;c<COLS;c++){
-          const el = document.createElement('div');
-          el.className = 'cell';
-          el.style.position = 'absolute';
-          el.style.width = cellW+'px'; el.style.height = cellH+'px';
-          el.style.left = (c*(cellW+GAP))+'px';
-          el.style.top = (r*(cellH+GAP))+'px';
-          el.style.cursor = 'pointer';
-          const cellData = { r, c, el, state:'safe', t:0 };
-          el.addEventListener('click', ()=> tryMoveTo(cellData.r, cellData.c));
-          wrap.appendChild(el);
-          cells.push(cellData);
-        }
-      }
-      function cellAt(r,c){ return cells[r*COLS+c]; }
+      const grid = MR.makeCellGrid(COLS, ROWS, {
+        gap: 5, margin: 36, cellStyles: { cursor: 'pointer' },
+        onCellClick: (r,c)=> tryMoveTo(r,c)
+      });
+      const { cellW, cells, key, placeCenter } = grid;
+      cells.forEach(cd=>{ cd.state = 'safe'; cd.t = 0; });
+      function cellAt(r,c){ return cells[key(r,c)]; }
 
       let pr = ROWS-1, pc = 1; // start bottom-middle
 
-      const player = document.createElement('div');
-      player.style.position = 'absolute';
-      player.style.width = (cellW*0.5)+'px'; player.style.height = (cellW*0.5)+'px';
-      player.style.borderRadius = '50%';
-      player.style.background = 'var(--go)';
-      player.style.boxShadow = '0 0 10px var(--go)';
-      player.style.transition = 'left 90ms ease, top 90ms ease';
-      wrap.appendChild(player);
+      const player = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellW*0.5)+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', transition: 'left 90ms ease, top 90ms ease' });
+      grid.wrap.appendChild(player);
 
-      function placePlayer(){
-        const cd = cellAt(pr,pc);
-        player.style.left = (cd.el.offsetLeft + cellW/2 - player.clientWidth/2)+'px';
-        player.style.top = (cd.el.offsetTop + cellH/2 - player.clientHeight/2)+'px';
-      }
+      function placePlayer(){ placeCenter(player, pr, pc); }
       placePlayer();
 
       let alive = true;
@@ -291,16 +242,10 @@
       const px = Math.round(w * 0.22); // fixed horizontal position, like DINOJUMP's runner
       let py = h/2;
 
-      const player = document.createElement('div');
-      player.style.position = 'absolute';
-      player.style.width = (playerR*2)+'px'; player.style.height = (playerR*2)+'px';
-      player.style.borderRadius = '50%';
-      player.style.background = 'var(--go)';
-      player.style.boxShadow = '0 0 10px var(--go)';
+      const player = MR.makeEl('', { position: 'absolute', width: (playerR*2)+'px', height: (playerR*2)+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)' });
       MR.stage.appendChild(player);
       function placePlayer(){
-        player.style.left = (px-playerR)+'px';
-        player.style.top = (py-playerR)+'px';
+        MR.styleEl(player, { left: (px-playerR)+'px', top: (py-playerR)+'px' });
       }
       placePlayer();
 
@@ -326,24 +271,9 @@
       window.addEventListener('keyup', onKeyUp);
 
       // tap-and-hold zones live on elements created fresh each round, wiped by clearStage()
-      const topZone = document.createElement('div');
-      const bottomZone = document.createElement('div');
-      [topZone, bottomZone].forEach(z=>{
-        z.style.position='absolute'; z.style.left='0'; z.style.right='0'; z.style.height='50%';
-        z.style.cursor='pointer'; z.style.touchAction='none';
-      });
-      topZone.style.top='0';
-      bottomZone.style.bottom='0';
-      topZone.addEventListener('pointerdown', ()=>{ goUp = true; });
-      bottomZone.addEventListener('pointerdown', ()=>{ goDown = true; });
-      function releaseUp(){ goUp = false; }
-      function releaseDown(){ goDown = false; }
-      topZone.addEventListener('pointerup', releaseUp);
-      topZone.addEventListener('pointerleave', releaseUp);
-      topZone.addEventListener('pointercancel', releaseUp);
-      bottomZone.addEventListener('pointerup', releaseDown);
-      bottomZone.addEventListener('pointerleave', releaseDown);
-      bottomZone.addEventListener('pointercancel', releaseDown);
+      const [topZone, bottomZone] = MR.splitZones(false);
+      MR.holdable(topZone, ()=>{ goUp = true; }, ()=>{ goUp = false; });
+      MR.holdable(bottomZone, ()=>{ goDown = true; }, ()=>{ goDown = false; });
       MR.stage.appendChild(topZone);
       MR.stage.appendChild(bottomZone);
 
@@ -354,21 +284,9 @@
       const obstacleSpeed = 0.30 * ctx.speedMul; // px/ms — the actual difficulty knob
 
       function makeObstacle(x, gapY){
-        const wrap = document.createElement('div');
-        wrap.style.position = 'absolute';
-        wrap.style.left = x+'px'; wrap.style.top = '0px';
-        wrap.style.width = obW+'px'; wrap.style.height = h+'px';
-        const top = document.createElement('div');
-        top.className = 'box';
-        top.style.position = 'absolute'; top.style.left = '0'; top.style.top = '0';
-        top.style.width = obW+'px'; top.style.height = Math.max(0, gapY-gapH/2)+'px';
-        top.style.background = 'var(--danger)';
-        const bottom = document.createElement('div');
-        bottom.className = 'box';
-        bottom.style.position = 'absolute'; bottom.style.left = '0';
-        bottom.style.top = (gapY+gapH/2)+'px';
-        bottom.style.width = obW+'px'; bottom.style.height = Math.max(0, h-(gapY+gapH/2))+'px';
-        bottom.style.background = 'var(--danger)';
+        const wrap = MR.makeEl('', { position: 'absolute', left: x+'px', top: '0px', width: obW+'px', height: h+'px' });
+        const top = MR.makeEl('box', { position: 'absolute', left: '0', top: '0', width: obW+'px', height: Math.max(0, gapY-gapH/2)+'px', background: 'var(--danger)' });
+        const bottom = MR.makeEl('box', { position: 'absolute', left: '0', top: (gapY+gapH/2)+'px', width: obW+'px', height: Math.max(0, h-(gapY+gapH/2))+'px', background: 'var(--danger)' });
         wrap.appendChild(top);
         wrap.appendChild(bottom);
         MR.stage.appendChild(wrap);
@@ -466,7 +384,7 @@
       const cellW = (laneW - (numLanesH - 1) * laneGapH) / numLanesH;
       function laneCenterX(i){ return i * (cellW + laneGapH) + cellW / 2; }
 
-      const wrap = styleEl(document.createElement('div'), {
+      const wrap = MR.makeEl('', {
         position:'absolute', left: laneX+'px', top:'0px',
         width: laneW+'px', height: h+'px',
         background:'var(--panel)', borderRadius:'10px',
@@ -478,14 +396,14 @@
       // with a visible gap of the panel's background color between each,
       // so all 7 lanes read clearly at a glance.
       for(let i=0;i<numLanesH;i++){
-        wrap.appendChild(styleEl(document.createElement('div'), {
+        wrap.appendChild(MR.makeEl('', {
           position:'absolute', left:(i*(cellW+laneGapH))+'px', top:'0', bottom:'0',
           width: cellW+'px', background:'var(--bezel)', borderRadius:'6px',
           boxShadow:'inset 0 0 0 1px var(--line)'
         }));
       }
 
-      const danger = styleEl(document.createElement('div'), {
+      const danger = MR.makeEl('', {
         position:'absolute', left:'0', bottom:'0',
         width: laneW+'px', height:'0px', background:'var(--danger)', opacity:'0.88'
       });
@@ -506,12 +424,12 @@
       // Grip + its "L"/"R" label are built together since both sides are
       // identical apart from which screen edge they sit on.
       function makeGrip(text, edgeStyle){
-        const label = styleEl(document.createElement('div'), {
+        const label = MR.makeEl('', {
           position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
           fontWeight:'800', fontSize:'13px', transition:'color 120ms ease', pointerEvents:'none'
         });
         label.textContent = text;
-        const grip = styleEl(document.createElement('div'), {
+        const grip = MR.makeEl('', {
           position:'absolute', top:'0', bottom:'0', width:'26px', borderRadius:'6px',
           transition:'opacity 120ms ease, background 120ms ease, box-shadow 120ms ease',
           transformOrigin:'center', ...edgeStyle
@@ -525,7 +443,7 @@
 
       const playerR = Math.max(9, Math.min(13, Math.floor(cellW / 2) - 3));
       let currentLane = Math.floor(numLanesH / 2); // start in the middle lane
-      const player = styleEl(document.createElement('div'), {
+      const player = MR.makeEl('', {
         position:'absolute', left:(laneCenterX(currentLane) - playerR)+'px',
         width:(playerR*2)+'px', height:(playerR*2)+'px', borderRadius:'50%',
         background:'var(--go)', boxShadow:'0 0 10px var(--go)', zIndex:'2'
@@ -569,7 +487,7 @@
       const rungInset = 30;
       const rungs = [];
       for(let i=1;i<=numLanes;i++){
-        const rung = styleEl(document.createElement('div'), {
+        const rung = MR.makeEl('', {
           position:'absolute', left: rungInset+'px',
           width: Math.max(0, laneW - rungInset*2)+'px', height:'3px',
           bottom:(laneGap*i - 1)+'px', background:'var(--line)',
@@ -586,10 +504,7 @@
       updateRungs();
 
       function setGripState(grip, label, isActive){
-        grip.style.opacity = isActive ? '1' : '0.35';
-        grip.style.background = isActive ? '#ffb020' : 'var(--line)';
-        grip.style.boxShadow = 'none';
-        grip.style.animation = isActive ? 'climbGripPulse 0.55s ease-in-out infinite' : 'none';
+        MR.styleEl(grip, { opacity: isActive ? '1' : '0.35', background: isActive ? '#ffb020' : 'var(--line)', boxShadow: 'none', animation: isActive ? 'climbGripPulse 0.55s ease-in-out infinite' : 'none' });
         label.style.color = isActive ? 'var(--bg)' : 'rgba(242,240,234,0.4)';
       }
       // Grips no longer show a "required next side" — either side can be
@@ -629,14 +544,7 @@
         if(e.key==='ArrowRight') attemptClimb('R');
       });
 
-      const leftZone = styleEl(document.createElement('div'), {
-        position:'absolute', top:'0', bottom:'0', width:'50%', left:'0',
-        cursor:'pointer', touchAction:'none'
-      });
-      const rightZone = styleEl(document.createElement('div'), {
-        position:'absolute', top:'0', bottom:'0', width:'50%', right:'0',
-        cursor:'pointer', touchAction:'none'
-      });
+      const [leftZone, rightZone] = MR.splitZones(true);
       leftZone.addEventListener('pointerdown', ()=> attemptClimb('L'));
       rightZone.addEventListener('pointerdown', ()=> attemptClimb('R'));
       MR.stage.appendChild(leftZone);
@@ -670,7 +578,7 @@
         if(!alive) return;
         const size = Math.min(cellW - 6, MR.rand(12, 18));
         const lane = Math.floor(MR.rand(0, numLanesH));
-        const el = styleEl(document.createElement('div'), {
+        const el = MR.makeEl('', {
           position:'absolute', left:(laneCenterX(lane) - size/2)+'px',
           width: size+'px', height: size+'px', background:'var(--danger)',
           borderRadius:'3px', transform:'rotate(45deg)',

@@ -15,13 +15,7 @@
     word: 'WAIT FOR IT',
     timeLimit: s => 4000/s,
     start(ctx){
-      const btn = document.createElement('div');
-      btn.className = 'target';
-      btn.style.width='160px'; btn.style.height='160px';
-      btn.style.background = 'var(--danger)';
-      btn.style.cursor='pointer';
-      btn.style.fontFamily='var(--display)'; btn.style.fontSize='20px';
-      btn.style.color='#0b0b10'; btn.style.fontWeight='900';
+      const btn = MR.makeEl('target', { width: '160px', height: '160px', background: 'var(--danger)', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '20px', color: '#0b0b10', fontWeight: '900' });
       btn.textContent = 'WAIT';
       MR.stage.appendChild(btn);
 
@@ -78,12 +72,7 @@
       const cellW = (w - (COLS - 1) * GAP) / COLS;
       const cellH = (h - (ROWS - 1) * GAP) / ROWS;
 
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = '16px';
-      wrap.style.top = '16px';
-      wrap.style.width = w + 'px';
-      wrap.style.height = h + 'px';
+      const wrap = MR.makeEl('', { position: 'absolute', left: '16px', top: '16px', width: w + 'px', height: h + 'px' });
       MR.stage.appendChild(wrap);
 
       // 1-3 crooks among the 6 slots, positions randomized
@@ -93,47 +82,21 @@
 
       let remainingCrooks = crookCount;
       let alive = true;
-      let selR = 0, selC = 0;
 
       const figs = [];
       for(let i = 0; i < 6; i++){
         const r = Math.floor(i / COLS), c = i % COLS;
         const isCrook = crookSet.has(i);
-        const el = document.createElement('div');
-        el.className = 'cell';
-        el.style.position = 'absolute';
-        el.style.width = cellW + 'px';
-        el.style.height = cellH + 'px';
-        el.style.left = (c * (cellW + GAP)) + 'px';
-        el.style.top = (r * (cellH + GAP)) + 'px';
-        el.style.display = 'flex';
-        el.style.alignItems = 'center';
-        el.style.justifyContent = 'center';
-        el.style.fontSize = Math.min(cellW, cellH) * 0.46 + 'px';
-        el.style.background = '#c9a876';
-        el.style.cursor = 'pointer';
-        el.style.transition = 'transform 140ms ease, opacity 140ms ease, background 140ms ease';
         // pop-up entrance, staggered slightly per cutout for a quick-draw feel
-        el.style.transform = 'translateY(14px) scale(0.9)';
-        el.style.opacity = '0';
+        const el = MR.makeEl('cell', { position: 'absolute', width: cellW + 'px', height: cellH + 'px', left: (c * (cellW + GAP)) + 'px', top: (r * (cellH + GAP)) + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.min(cellW, cellH) * 0.46 + 'px', background: '#c9a876', cursor: 'pointer', transition: 'transform 140ms ease, opacity 140ms ease, background 140ms ease', transform: 'translateY(14px) scale(0.9)', opacity: '0' });
         el.textContent = isCrook ? MR.pick(CROOKS) : MR.pick(CIVILIANS);
         wrap.appendChild(el);
         figs.push({ el, isCrook, hit: false, r, c });
         el.addEventListener('click', () => shoot(i));
         setTimeout(() => {
           if(!alive) return;
-          el.style.transform = 'translateY(0) scale(1)';
-          el.style.opacity = '1';
+          MR.styleEl(el, { transform: 'translateY(0) scale(1)', opacity: '1' });
         }, 30 + i * 45);
-      }
-
-      function updateSelection(){
-        figs.forEach(f => {
-          if(f.hit) return;
-          f.el.style.boxShadow = (f.r === selR && f.c === selC)
-            ? '0 0 0 3px var(--flash)'
-            : 'inset 0 0 0 1px var(--line)';
-        });
       }
 
       function shoot(i){
@@ -157,16 +120,7 @@
         }
       }
 
-      MR.setKeyHandler((e) => {
-        if(e.key === 'ArrowLeft'){ selC = Math.max(0, selC - 1); updateSelection(); }
-        if(e.key === 'ArrowRight'){ selC = Math.min(COLS - 1, selC + 1); updateSelection(); }
-        if(e.key === 'ArrowUp'){ selR = Math.max(0, selR - 1); updateSelection(); }
-        if(e.key === 'ArrowDown'){ selR = Math.min(ROWS - 1, selR + 1); updateSelection(); }
-        if(e.key === ' ' || e.key === 'Enter'){
-          e.preventDefault();
-          shoot(selR * COLS + selC);
-        }
-      });
+      MR.gridSelector(ROWS, COLS, figs, (r, c) => shoot(r * COLS + c), f => f.hit);
 
       ctx.onCleanup = () => { alive = false; };
     }
@@ -183,12 +137,7 @@
       const cellW = (w - (COLS - 1) * GAP) / COLS;
       const cellH = (h - (ROWS - 1) * GAP) / ROWS;
 
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = '16px';
-      wrap.style.top = '16px';
-      wrap.style.width = w + 'px';
-      wrap.style.height = h + 'px';
+      const wrap = MR.makeEl('', { position: 'absolute', left: '16px', top: '16px', width: w + 'px', height: h + 'px' });
       MR.stage.appendChild(wrap);
 
       // six independent slots — each one pops a crook or a bystander at
@@ -196,24 +145,12 @@
       const slots = [];
       for(let i = 0; i < 6; i++){
         const r = Math.floor(i / COLS), c = i % COLS;
-        const el = document.createElement('div');
-        el.className = 'cell';
-        el.style.position = 'absolute';
-        el.style.width = cellW + 'px';
-        el.style.height = cellH + 'px';
-        el.style.left = (c * (cellW + GAP)) + 'px';
-        el.style.top = (r * (cellH + GAP)) + 'px';
-        el.style.display = 'flex';
-        el.style.alignItems = 'center';
-        el.style.justifyContent = 'center';
-        el.style.fontSize = Math.min(cellW, cellH) * 0.46 + 'px';
-        el.style.overflow = 'hidden';
+        const el = MR.makeEl('cell', { position: 'absolute', width: cellW + 'px', height: cellH + 'px', left: (c * (cellW + GAP)) + 'px', top: (r * (cellH + GAP)) + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.min(cellW, cellH) * 0.46 + 'px', overflow: 'hidden' });
         wrap.appendChild(el);
         slots.push({ el, r, c, active: null });
       }
 
       let alive = true;
-      let selR = 0, selC = 0;
       let spawnTimer = null;
 
       // scales down with speedMul — later rounds are noticeably quicker
@@ -225,29 +162,15 @@
       const maxConcurrent = 2;
       const crookChance = 0.45;
 
-      function updateSelection(){
-        slots.forEach(s => {
-          s.el.style.boxShadow = (s.r === selR && s.c === selC)
-            ? '0 0 0 3px var(--flash)'
-            : 'inset 0 0 0 1px var(--line)';
-        });
-      }
-
       function popDown(slot){
         const el = slot.el;
-        el.style.transform = 'translateY(14px) scale(0.85)';
-        el.style.opacity = '0';
-        el.style.cursor = 'default';
+        MR.styleEl(el, { transform: 'translateY(14px) scale(0.85)', opacity: '0', cursor: 'default' });
       }
 
       function spawnAt(slot){
         const isCrook = Math.random() < crookChance;
         const el = slot.el;
-        el.style.background = '#c9a876';
-        el.style.cursor = 'pointer';
-        el.style.transition = 'transform 100ms ease, opacity 100ms ease, background 100ms ease';
-        el.style.transform = 'translateY(14px) scale(0.85)';
-        el.style.opacity = '0';
+        MR.styleEl(el, { background: '#c9a876', cursor: 'pointer', transition: 'transform 100ms ease, opacity 100ms ease, background 100ms ease', transform: 'translateY(14px) scale(0.85)', opacity: '0' });
         el.textContent = isCrook ? MR.pick(CROOKS) : MR.pick(CIVILIANS);
 
         function onClick(){ shoot(slot); }
@@ -257,8 +180,7 @@
 
         requestAnimationFrame(() => {
           if(slot.active !== rec) return;
-          el.style.transform = 'translateY(0) scale(1)';
-          el.style.opacity = '1';
+          MR.styleEl(el, { transform: 'translateY(0) scale(1)', opacity: '1' });
         });
 
         rec.hideTimeout = setTimeout(() => {
@@ -302,16 +224,9 @@
         spawnTimer = setTimeout(trySpawn, spawnEvery);
       }
 
-      MR.setKeyHandler((e) => {
-        if(e.key === 'ArrowLeft'){ selC = Math.max(0, selC - 1); updateSelection(); }
-        if(e.key === 'ArrowRight'){ selC = Math.min(COLS - 1, selC + 1); updateSelection(); }
-        if(e.key === 'ArrowUp'){ selR = Math.max(0, selR - 1); updateSelection(); }
-        if(e.key === 'ArrowDown'){ selR = Math.min(ROWS - 1, selR + 1); updateSelection(); }
-        if(e.key === ' ' || e.key === 'Enter'){
-          e.preventDefault();
-          const slot = slots.find(s => s.r === selR && s.c === selC);
-          if(slot) shoot(slot);
-        }
+      MR.gridSelector(ROWS, COLS, slots, (r, c) => {
+        const slot = slots.find(s => s.r === r && s.c === c);
+        if(slot) shoot(slot);
       });
 
       trySpawn();
@@ -349,28 +264,7 @@
       updateHud();
 
       // ---- keyboard-driven crosshair (mouse/tap works directly on ducks too) ----
-      let rx = w/2, ry = h*0.4;
-      const reticle = document.createElement('div');
-      reticle.style.position = 'absolute';
-      reticle.style.width = '22px'; reticle.style.height = '22px';
-      reticle.style.marginLeft = '-11px'; reticle.style.marginTop = '-11px';
-      reticle.style.border = '2px solid var(--flash)';
-      reticle.style.borderRadius = '50%';
-      reticle.style.boxShadow = '0 0 6px var(--flash)';
-      reticle.style.pointerEvents = 'none';
-      reticle.style.zIndex = 9;
-      MR.stage.appendChild(reticle);
-      function placeReticle(){ reticle.style.left = rx+'px'; reticle.style.top = ry+'px'; }
-      placeReticle();
-
-      const STEP = 30;
-      MR.setKeyHandler((e)=>{
-        if(e.key==='ArrowLeft'){ rx = Math.max(0, rx-STEP); placeReticle(); }
-        if(e.key==='ArrowRight'){ rx = Math.min(w, rx+STEP); placeReticle(); }
-        if(e.key==='ArrowUp'){ ry = Math.max(0, ry-STEP); placeReticle(); }
-        if(e.key==='ArrowDown'){ ry = Math.min(h, ry+STEP); placeReticle(); }
-        if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); fireAt(rx, ry); }
-      });
+      MR.createCrosshair({ x: w/2, y: h*0.4, w, h, onFire: (x,y)=>fireAt(x,y) });
 
       // ---- duck visuals & flight ----
       // Beak is fixed pointing along the body's local +x axis; the whole
@@ -378,22 +272,8 @@
       // visually faces the direction it's flying.
       function makeDuckEl(){
         const bodyW = 30, bodyH = 18;
-        const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = bodyW+'px';
-        el.style.height = bodyH+'px';
-        el.style.borderRadius = '50%';
-        el.style.background = 'var(--go)';
-        el.style.boxShadow = '0 0 8px rgba(62,245,192,0.55)';
-        el.style.zIndex = 6;
-        const beak = document.createElement('div');
-        beak.style.position = 'absolute';
-        beak.style.top = (bodyH/2 - 4)+'px';
-        beak.style.left = (bodyW - 1)+'px';
-        beak.style.width = '0'; beak.style.height = '0';
-        beak.style.borderTop = '4px solid transparent';
-        beak.style.borderBottom = '4px solid transparent';
-        beak.style.borderLeft = '8px solid var(--flash)';
+        const el = MR.makeEl('', { position: 'absolute', width: bodyW+'px', height: bodyH+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 8px rgba(62,245,192,0.55)', zIndex: 6 });
+        const beak = MR.makeEl('', { position: 'absolute', top: (bodyH/2 - 4)+'px', left: (bodyW - 1)+'px', width: '0', height: '0', borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '8px solid var(--flash)' });
         el.appendChild(beak);
         MR.stage.appendChild(el);
         return { el, bodyW, bodyH };
@@ -465,25 +345,9 @@
         setTimeout(()=>{ d.el.remove(); }, 340);
       }
 
-      function showMuzzleFlash(x,y){
-        const f = document.createElement('div');
-        f.style.position = 'absolute';
-        f.style.left = (x-9)+'px'; f.style.top = (y-9)+'px';
-        f.style.width = '18px'; f.style.height = '18px';
-        f.style.borderRadius = '50%';
-        f.style.background = 'var(--flash)';
-        f.style.opacity = '0.85';
-        f.style.pointerEvents = 'none';
-        f.style.zIndex = 10;
-        f.style.transition = 'transform 220ms ease-out, opacity 220ms ease-out';
-        MR.stage.appendChild(f);
-        requestAnimationFrame(()=>{ f.style.transform = 'scale(2.2)'; f.style.opacity = '0'; });
-        setTimeout(()=>f.remove(), 240);
-      }
-
       function fireAt(x, y){
         if(!alive) return;
-        showMuzzleFlash(x, y);
+        MR.muzzleFlash(x, y);
         let target = null;
         for(const d of ducks){
           if(!d.alive) continue;
@@ -509,12 +373,8 @@
         }
       }
 
-      function pointFromEvent(e){
-        const r = MR.stage.getBoundingClientRect();
-        return { x: e.clientX - r.left, y: e.clientY - r.top };
-      }
       function onPointerDown(e){
-        const p = pointFromEvent(e);
+        const p = MR.pointerPos(e);
         fireAt(p.x, p.y);
       }
       MR.stage.addEventListener('pointerdown', onPointerDown);
@@ -599,28 +459,7 @@
       updateHud();
 
       // ---- keyboard-driven crosshair (mouse/tap works directly on clays too) ----
-      let rx = w/2, ry = h*0.6;
-      const reticle = document.createElement('div');
-      reticle.style.position = 'absolute';
-      reticle.style.width = '22px'; reticle.style.height = '22px';
-      reticle.style.marginLeft = '-11px'; reticle.style.marginTop = '-11px';
-      reticle.style.border = '2px solid var(--flash)';
-      reticle.style.borderRadius = '50%';
-      reticle.style.boxShadow = '0 0 6px var(--flash)';
-      reticle.style.pointerEvents = 'none';
-      reticle.style.zIndex = 9;
-      MR.stage.appendChild(reticle);
-      function placeReticle(){ reticle.style.left = rx+'px'; reticle.style.top = ry+'px'; }
-      placeReticle();
-
-      const STEP = 30;
-      MR.setKeyHandler((e)=>{
-        if(e.key==='ArrowLeft'){ rx = Math.max(0, rx-STEP); placeReticle(); }
-        if(e.key==='ArrowRight'){ rx = Math.min(w, rx+STEP); placeReticle(); }
-        if(e.key==='ArrowUp'){ ry = Math.max(0, ry-STEP); placeReticle(); }
-        if(e.key==='ArrowDown'){ ry = Math.min(h, ry+STEP); placeReticle(); }
-        if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); fireAt(rx, ry); }
-      });
+      MR.createCrosshair({ x: w/2, y: h*0.6, w, h, onFire: (x,y)=>fireAt(x,y) });
 
       // ---- clay visuals & flight ----
       // Flight time (T) is a fixed reaction-time budget, deliberately NOT
@@ -633,13 +472,7 @@
       const claySize = 26;
 
       function makeClayEl(){
-        const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = claySize+'px'; el.style.height = claySize+'px';
-        el.style.borderRadius = '50%';
-        el.style.background = '#d9772e';
-        el.style.boxShadow = 'inset 0 -4px 0 rgba(0,0,0,0.25), 0 0 8px rgba(217,119,46,0.5)';
-        el.style.zIndex = 6;
+        const el = MR.makeEl('', { position: 'absolute', width: claySize+'px', height: claySize+'px', borderRadius: '50%', background: '#d9772e', boxShadow: 'inset 0 -4px 0 rgba(0,0,0,0.25), 0 0 8px rgba(217,119,46,0.5)', zIndex: 6 });
         MR.stage.appendChild(el);
         return el;
       }
@@ -686,25 +519,9 @@
         c.el.remove();
       }
 
-      function showMuzzleFlash(x,y){
-        const f = document.createElement('div');
-        f.style.position = 'absolute';
-        f.style.left = (x-9)+'px'; f.style.top = (y-9)+'px';
-        f.style.width = '18px'; f.style.height = '18px';
-        f.style.borderRadius = '50%';
-        f.style.background = 'var(--flash)';
-        f.style.opacity = '0.85';
-        f.style.pointerEvents = 'none';
-        f.style.zIndex = 10;
-        f.style.transition = 'transform 220ms ease-out, opacity 220ms ease-out';
-        MR.stage.appendChild(f);
-        requestAnimationFrame(()=>{ f.style.transform = 'scale(2.2)'; f.style.opacity = '0'; });
-        setTimeout(()=>f.remove(), 240);
-      }
-
       function fireAt(x, y){
         if(!alive) return;
-        showMuzzleFlash(x, y);
+        MR.muzzleFlash(x, y);
         let target = null;
         for(const c of clays){
           if(!c.alive || c.hit) continue;
@@ -724,12 +541,8 @@
         }
       }
 
-      function pointFromEvent(e){
-        const r = MR.stage.getBoundingClientRect();
-        return { x: e.clientX - r.left, y: e.clientY - r.top };
-      }
       function onPointerDown(e){
-        const p = pointFromEvent(e);
+        const p = MR.pointerPos(e);
         fireAt(p.x, p.y);
       }
       MR.stage.addEventListener('pointerdown', onPointerDown);

@@ -108,8 +108,7 @@
   function renderLives(justRecovered){
     livesEl.innerHTML = '';
     for(let i=0;i<maxLives;i++){
-      const d = document.createElement('div');
-      d.className = 'life' + (i < lives ? '' : ' lost');
+      const d = window.MR.makeEl('life' + (i < lives ? '' : ' lost'));
       if(justRecovered && i === lives-1) d.classList.add('recovered');
       livesEl.appendChild(d);
     }
@@ -206,6 +205,387 @@
     // games can still fall back to direct el.style.x assignment for
     // one-off tweaks (e.g. inside a per-frame animation loop).
     styleEl(el, styles){ Object.assign(el.style, styles); return el; },
+
+    makeEl(className, styles){
+      const el = document.createElement('div');
+      if(className) el.className = className;
+      if(styles) this.styleEl(el, styles);
+      return el;
+    },
+
+    // Builds an NROWS x NCOLS CSS grid of cell elements (the layout reused
+    // by ODD ONE, WHACK, MEMORY, MATCH, SPOT, CARD PEEK, MISSING PIECE, and
+    // the logic odd-shape-out game — each currently rebuilds this same
+    // grid-container-plus-cells pattern independently). Returns the wrapper
+    // element (not yet appended) and the array of cell elements in row-major
+    // order; callers style/populate/wire up each cell themselves.
+    // opts: { cellClass, gap, width, height, wrapStyles, cellStyles }
+    makeGrid(nrows, ncols, opts){
+      opts = opts || {};
+      const wrap = this.makeEl('', Object.assign({
+        display: 'grid',
+        gridTemplateColumns: 'repeat(' + ncols + ', 1fr)',
+        gridTemplateRows: 'repeat(' + nrows + ', 1fr)',
+        gap: opts.gap || '10px',
+        width: opts.width || '100%'
+      }, opts.height ? { height: opts.height } : {}, opts.wrapStyles || {}));
+
+      const cells = [];
+      for(let i=0;i<nrows*ncols;i++){
+        const cell = this.makeEl(opts.cellClass !== undefined ? opts.cellClass : 'cell', opts.cellStyles);
+        wrap.appendChild(cell);
+        cells.push(cell);
+      }
+      return { wrap, cells };
+    },
+
+    // Shared math for any COLS x ROWS grid laid out inside the stage with a
+    // fixed outer margin and a gap between cells. Several games rebuilt this
+    // same formula independently (ESCAPE, MAZE-MUNCH, LAVA, ALLEY, RUSH
+    // ALLEY) — centralized here so the arithmetic only lives in one place.
+    gridMetrics(cols, rows, gap, margin){
+      const w = this.screen.clientWidth - margin;
+      const h = this.screen.clientHeight - margin;
+      const cellW = (w - (cols-1)*gap) / cols;
+      const cellH = (h - (rows-1)*gap) / rows;
+      return { w, h, cellW, cellH };
+    },
+
+    // Builds an absolute-positioned COLSxROWS pixel grid inside the stage —
+    // the wrap-plus-per-cell-div loop duplicated (with only cosmetic
+    // renames) across ESCAPE, MAZE-MUNCH, LAVA, and SNAKE. Cell sizing
+    // comes from gridMetrics; this creates the actual DOM on top of that
+    // and hands back the bookkeeping every one of those games needs:
+    // a row-major `cells` array (index = key(r,c)), and two placement
+    // helpers for moving sprites around on top of the grid.
+    // opts: { gap (default 6), margin (default 36), cellClass, cellStyles,
+    //   wrapStyles, onCellClick }
+    //   cellClass: CSS class applied to every cell div (default 'cell',
+    //     which is the bordered/background tile look used elsewhere).
+    //     Pass '' or false for plain borderless cells — SNAKE wants the
+    //     pixel grid's math without any visible per-cell tile.
+    //   onCellClick(r,c): if given, wired as a click handler on every
+    //     cell (including ones a caller later marks as walls/hazards —
+    //     same as today, where the move-validation logic itself is what
+    //     rejects a click on a blocked cell, not the DOM wiring).
+    makeCellGrid(cols, rows, opts){
+      opts = opts || {};
+      const gap = opts.gap !== undefined ? opts.gap : 6;
+      const margin = opts.margin !== undefined ? opts.margin : 36;
+      const { w, h, cellW, cellH } = this.gridMetrics(cols, rows, gap, margin);
+      const offset = margin/2;
+
+      const wrap = this.makeEl('', Object.assign({
+        position: 'absolute', left: offset+'px', top: offset+'px',
+        width: w+'px', height: h+'px'
+      }, opts.wrapStyles || {}));
+      this.stage.appendChild(wrap);
+
+      const cellClass = opts.cellClass !== undefined ? opts.cellClass : 'cell';
+      const key = (r,c)=> r*cols+c;
+      const cells = [];
+      for(let r=0;r<rows;r++){
+        for(let c=0;c<cols;c++){
+          const el = this.makeEl(cellClass || '', Object.assign({
+            position: 'absolute', width: cellW+'px', height: cellH+'px',
+            left: (c*(cellW+gap))+'px', top: (r*(cellH+gap))+'px'
+          }, opts.cellStyles || {}));
+          wrap.appendChild(el);
+          cells[key(r,c)] = { r, c, el };
+        }
+      }
+      if(opts.onCellClick){
+        cells.forEach(cd=> cd.el.addEventListener('click', ()=> opts.onCellClick(cd.r, cd.c)));
+      }
+
+      // Centers `el` inside cell (r,c) — the placePlayer/placeAt/placeGhost
+      // pattern each game rebuilt for its moving sprites. Reads el's own
+      // current size, so call it after the sprite's width/height are set.
+      function placeCenter(el, r, c){
+        Object.assign(el.style, {
+          left: (c*(cellW+gap) + cellW/2 - el.clientWidth/2)+'px',
+          top: (r*(cellH+gap) + cellH/2 - el.clientHeight/2)+'px'
+        });
+      }
+      // Top-left aligns `el` with cell (r,c) — for full-tile overlays or
+      // sprites (like SNAKE's segments) sized to fill the cell themselves.
+      function placeCell(el, r, c){
+        Object.assign(el.style, {
+          left: (c*(cellW+gap))+'px',
+          top: (r*(cellH+gap))+'px'
+        });
+      }
+
+      return { wrap, cellW, cellH, cells, key, placeCenter, placeCell };
+    },
+
+    // Shared "two points + scattered walls, retried until provably
+    // solvable" layout generator behind ESCAPE (start/target) and
+    // MAZE-MUNCH (start/ghostStart) — previously duplicated with only
+    // cosmetic renames. Picks two random cells at least minDist apart,
+    // scatters a wall budget around them (never on either point), and
+    // retries the *whole* layout — not just the walls — until
+    // bfsReachable confirms `b` can still reach `a`. Falls back to
+    // opposite corners with no walls if nothing solvable turns up within
+    // `attempts`, so a round can never soft-lock on an unsolvable maze.
+    // opts: { wallDensity (default 0.28), minDist (default
+    //   floor((cols+rows)/2)), attempts (default 40), wallGuard (default
+    //   200, the retry cap for placing individual walls) }
+    generateSolvableLayout(cols, rows, opts){
+      opts = opts || {};
+      const wallDensity = opts.wallDensity !== undefined ? opts.wallDensity : 0.28;
+      const minDist = opts.minDist !== undefined ? opts.minDist : Math.floor((cols+rows)/2);
+      const attempts = opts.attempts !== undefined ? opts.attempts : 40;
+      const wallGuard = opts.wallGuard !== undefined ? opts.wallGuard : 200;
+      const key = (r,c)=> r*cols+c;
+
+      for(let attempt=0; attempt<attempts; attempt++){
+        const a = { r: Math.floor(this.rand(0,rows)), c: Math.floor(this.rand(0,cols)) };
+        const b = { r: Math.floor(this.rand(0,rows)), c: Math.floor(this.rand(0,cols)) };
+        const dist = Math.abs(a.r-b.r) + Math.abs(a.c-b.c);
+        if(dist < minDist) continue;
+        const walls = new Set();
+        const wallBudget = Math.floor(cols*rows*wallDensity);
+        let guard = 0;
+        while(walls.size < wallBudget && guard < wallGuard){
+          guard++;
+          const r = Math.floor(this.rand(0,rows)), c = Math.floor(this.rand(0,cols));
+          const k = key(r,c);
+          if((r===a.r&&c===a.c) || (r===b.r&&c===b.c)) continue;
+          walls.add(k);
+        }
+        if(this.bfsReachable(cols, rows, walls, a, b)) return { a, b, walls };
+      }
+      return { a:{r:0,c:0}, b:{r:rows-1,c:cols-1}, walls:new Set() };
+    },
+
+    // Breadth-first search over a COLSxROWS grid of cells, treating `walls`
+    // (a Set of r*cols+c keys) as blocked. bfsReachable just answers whether
+    // `to` can be reached from `from`; bfsNextStep returns the next cell
+    // along the shortest such path (or `from` itself if already there / no
+    // path exists) — used to make a chaser re-route live every tick instead
+    // of committing to a stale path. Both were previously duplicated
+    // (with only cosmetic renames) between the ESCAPE and MAZE-MUNCH games.
+    bfsReachable(cols, rows, walls, from, to){
+      const key = (r,c)=> r*cols+c;
+      const seen = new Set([key(from.r,from.c)]);
+      const queue = [from];
+      while(queue.length){
+        const cur = queue.shift();
+        if(cur.r===to.r && cur.c===to.c) return true;
+        const neighbors = [[cur.r-1,cur.c],[cur.r+1,cur.c],[cur.r,cur.c-1],[cur.r,cur.c+1]];
+        for(const [nr,nc] of neighbors){
+          if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+          const k = key(nr,nc);
+          if(seen.has(k) || walls.has(k)) continue;
+          seen.add(k);
+          queue.push({r:nr,c:nc});
+        }
+      }
+      return false;
+    },
+    bfsNextStep(cols, rows, walls, from, to){
+      if(from.r===to.r && from.c===to.c) return from;
+      const key = (r,c)=> r*cols+c;
+      const seen = new Set([key(from.r,from.c)]);
+      const queue = [[from]];
+      while(queue.length){
+        const path = queue.shift();
+        const cur = path[path.length-1];
+        if(cur.r===to.r && cur.c===to.c) return path[1];
+        const neighbors = [[cur.r-1,cur.c],[cur.r+1,cur.c],[cur.r,cur.c-1],[cur.r,cur.c+1]];
+        for(const [nr,nc] of neighbors){
+          if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+          const k = key(nr,nc);
+          if(seen.has(k) || walls.has(k)) continue;
+          seen.add(k);
+          queue.push(path.concat([{r:nr,c:nc}]));
+        }
+      }
+      return from;
+    },
+
+    // A keyboard-steerable reticle: arrow keys nudge it by `step` px
+    // (clamped to [0,w]x[0,h]), space/enter fires at its current position.
+    // Was previously copy-pasted, including the exact CSS, between the
+    // HUNT and SKEET shooting games.
+    createCrosshair({ x, y, w, h, step, onFire }){
+      let rx = x, ry = y;
+      step = step || 30;
+      const reticle = this.makeEl('', {
+        position:'absolute', width:'22px', height:'22px',
+        marginLeft:'-11px', marginTop:'-11px',
+        border:'2px solid var(--flash)', borderRadius:'50%',
+        boxShadow:'0 0 6px var(--flash)', pointerEvents:'none', zIndex:9
+      });
+      this.stage.appendChild(reticle);
+      function place(){ reticle.style.left = rx+'px'; reticle.style.top = ry+'px'; }
+      place();
+      this.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft'){ rx = Math.max(0, rx-step); place(); }
+        if(e.key==='ArrowRight'){ rx = Math.min(w, rx+step); place(); }
+        if(e.key==='ArrowUp'){ ry = Math.max(0, ry-step); place(); }
+        if(e.key==='ArrowDown'){ ry = Math.min(h, ry+step); place(); }
+        if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); if(onFire) onFire(rx,ry); }
+      });
+      return { get x(){ return rx; }, get y(){ return ry; }, place, el: reticle };
+    },
+
+    // A brief expanding-dot "shot fired" flash at (x,y). Was previously
+    // defined identically twice inside games-shooting.js.
+    muzzleFlash(x, y){
+      const f = this.makeEl('', {
+        position:'absolute', left:(x-9)+'px', top:(y-9)+'px',
+        width:'18px', height:'18px', borderRadius:'50%',
+        background:'var(--flash)', opacity:'0.85', pointerEvents:'none',
+        zIndex:10, transition:'transform 220ms ease-out, opacity 220ms ease-out'
+      });
+      this.stage.appendChild(f);
+      requestAnimationFrame(()=>{ f.style.transform = 'scale(2.2)'; f.style.opacity = '0'; });
+      setTimeout(()=> f.remove(), 240);
+    },
+
+    // Converts a pointer event to coordinates relative to `el` (defaults to
+    // the stage) — the getBoundingClientRect()-and-subtract boilerplate that
+    // kept reappearing wherever a game needed "where on the stage was that
+    // click/tap".
+    pointerPos(e, el){
+      const r = (el || this.stage).getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    },
+
+    // Wires a "press and hold" control: onPress fires on pointerdown,
+    // onRelease fires on pointerup/pointerleave/pointercancel — covering
+    // every way a hold can end (including dragging off the element), which
+    // several games previously re-wired by hand, one listener at a time.
+    holdable(el, onPress, onRelease){
+      el.addEventListener('pointerdown', onPress);
+      const release = ()=> onRelease();
+      el.addEventListener('pointerup', release);
+      el.addEventListener('pointerleave', release);
+      el.addEventListener('pointercancel', release);
+      return el;
+    },
+
+    // Bookkeeping for setPointerCapture/releasePointerCapture on a single
+    // draggable element. Capture-without-release is an easy leak: a round
+    // can end (win/lose/timeout) while the pointer is still physically
+    // down, so no pointerup/pointercancel ever fires to release it. That's
+    // usually masked because the captured element gets destroyed by the
+    // next clearStage(), which implicitly drops capture too — except for
+    // an element that survives across rounds (like MR.stage itself in
+    // BULLET HELL), where there's no such fallback and capture can get
+    // stuck on it forever, silently breaking pointer/click routing on
+    // every later round. Relying on that implicit-release-on-removal
+    // fallback at all is also inconsistent across browsers/WebViews, so
+    // this releases explicitly on every path either way.
+    //
+    // Usage: call onDown(e) from the element's pointerdown handler,
+    // onUp(e) from pointerup/pointercancel, and release() unconditionally
+    // from ctx.onCleanup (covers the round-ends-mid-drag case where
+    // neither pointerup nor pointercancel ever fired).
+    pointerCaptureTracker(el){
+      let pointerId = null;
+      return {
+        onDown(e){
+          pointerId = e.pointerId;
+          el.setPointerCapture(e.pointerId);
+        },
+        onUp(e){
+          if(e && e.pointerId !== undefined){
+            try{ el.releasePointerCapture(e.pointerId); }catch(err){}
+          }
+          pointerId = null;
+        },
+        release(){
+          if(pointerId !== null){
+            try{ el.releasePointerCapture(pointerId); }catch(err){}
+            pointerId = null;
+          }
+        }
+      };
+    },
+
+    // Splits the stage into two equal, absolutely-positioned tap/hold
+    // zones — top+bottom (vertical=false) or left+right (vertical=true).
+    // Returns [zoneA, zoneB] (top/left first); the caller wires whatever
+    // listeners it needs (plain 'click' for a momentary trigger, or
+    // MR.holdable for press-and-hold). Previously each of DINOJUMP, SWIM,
+    // BALANCE, and ORBIT built this same pair of divs from scratch.
+    splitZones(vertical){
+      const base = vertical
+        ? { position:'absolute', top:'0', bottom:'0', width:'50%', cursor:'pointer', touchAction:'none' }
+        : { position:'absolute', left:'0', right:'0', height:'50%', cursor:'pointer', touchAction:'none' };
+      const a = this.makeEl('', base);
+      const b = this.makeEl('', base);
+      if(vertical){ a.style.left = '0'; b.style.right = '0'; }
+      else { a.style.top = '0'; b.style.bottom = '0'; }
+      return [a, b];
+    },
+
+    // Builds `count` distinct option values around `answer` (always
+    // includes `answer` itself), each a random offset within +/-spread,
+    // optionally floored at `min`, then shuffled. The "correct answer plus
+    // a few plausible distractors" quiz pattern was previously duplicated
+    // (with slightly different spreads/mins) across MATH, COUNT, and the
+    // memory number-guess game.
+    distractorOptions(answer, count, spread, min){
+      const opts = new Set([answer]);
+      let guard = 0;
+      while(opts.size < count && guard++ < 1000){
+        let cand = answer + Math.floor(this.rand(-spread, spread+1));
+        if(min !== undefined) cand = Math.max(min, cand);
+        if(cand !== answer) opts.add(cand);
+      }
+      return this.shuffle(Array.from(opts));
+    },
+
+    // Renders `options` as a clickable 2-column grid (the quiz-answer
+    // layout reused by MATH, COUNT, SPOT-THE-NUMBER, etc). Clicking a cell
+    // calls onPick(value). Returns the row element — append it yourself.
+    buildOptionGrid(options, onPick, opts){
+      opts = opts || {};
+      const row = this.makeEl('', {
+        display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'10px',
+        width: opts.width || '70%'
+      });
+      options.forEach(o=>{
+        const cell = this.makeEl('cell', {
+          padding:'16px', textAlign:'center', cursor:'pointer',
+          fontFamily:'var(--display)', fontSize: opts.fontSize || '22px'
+        });
+        cell.textContent = o;
+        cell.addEventListener('click', ()=> onPick(o));
+        row.appendChild(cell);
+      });
+      return row;
+    },
+
+    // Arrow-key + space/enter driven selection over a ROWSxCOLS grid of
+    // slots (each { el, r, c }). Highlights the selected slot and calls
+    // onFire(r, c) on space/enter. Was previously duplicated (identical
+    // update/keydown logic) between the ALLEY and RUSH ALLEY shooting games.
+    gridSelector(rows, cols, slotEls, onFire, isSkipped){
+      let selR = 0, selC = 0;
+      function update(){
+        slotEls.forEach(s=>{
+          if(isSkipped && isSkipped(s)) return;
+          s.el.style.boxShadow = (s.r===selR && s.c===selC)
+            ? '0 0 0 3px var(--flash)'
+            : 'inset 0 0 0 1px var(--line)';
+        });
+      }
+      update();
+      this.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft'){ selC = Math.max(0, selC-1); update(); }
+        if(e.key==='ArrowRight'){ selC = Math.min(cols-1, selC+1); update(); }
+        if(e.key==='ArrowUp'){ selR = Math.max(0, selR-1); update(); }
+        if(e.key==='ArrowDown'){ selR = Math.min(rows-1, selR+1); update(); }
+        if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); onFire(selR, selC); }
+      });
+      return { get r(){ return selR; }, get c(){ return selC; }, update };
+    },
+
     rafId: null
   };
   // ---------- ENGINE ----------
