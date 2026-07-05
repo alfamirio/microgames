@@ -334,8 +334,8 @@
 
 
   MR.games.push({
-    label: 'BREAKOUT',
-    desc: 'Breakout paddle — arrow keys or tap left/right, keep the ball off the floor for the whole round.',
+    label: 'BRICK BREAKER',
+    desc: 'Brick breaker paddle — arrow keys or tap left/right, keep the ball off the floor for the whole round.',
     word: 'BOUNCE!',
     timeLimit: s => 2000/s,
     start(ctx){

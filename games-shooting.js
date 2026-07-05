@@ -594,537 +594,553 @@
   });
 
 
-  MR.games.push({
-    label: 'R-TYPE',
-    desc: 'Mini side-scrolling shooter: move your ship across the 7 lanes with the up/down arrows (or tap the top/bottom of the screen), and fire with space or by tapping the ship itself. Every 3 shots you burn through a reload \u2014 no firing until it finishes \u2014 so line up shots carefully instead of spraying. Enemies shoot back (at most 2 shots incoming at once), so dodge by switching lanes.',
-    word: 'INCOMING!',
-    // fixed 7s round regardless of speedMul: difficulty comes from
-    // enemySpeed/spawnEvery scaling with ctx.speedMul below, not from
-    // squeezing the clock, since NEEDED now needs a stable window to
-    // realistically fit 10 spawns + kills into.
-    timeLimit: s => 8000,
-    start(ctx){
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const LANE_COUNT = 7, NEEDED = 10;
-      // reaching NEEDED kills before the clock runs out ends the round
-      // immediately via onWin() below; running the clock out otherwise
-      // is now also a win, provided no enemy has reached the left
-      // border in the meantime (that's an instant loss, handled where
-      // enemies are moved, further down).
-      ctx.survivalGame = true;
-      const MAG_SIZE = 3, RELOAD_MS = 650;
-      const laneH = h / LANE_COUNT;
-      const laneY = i => i * laneH + laneH / 2;
 
-      const wrap = MR.makeEl('', { position: 'absolute', inset: '0' });
-      MR.stage.appendChild(wrap);
+  // ---------- SHARED AXIS-SHOOTER ICONS ----------
+  // Clip-path polygons stand in for sprites, consistent with the rest of
+  // the cartridge (no image assets). Shape carries the meaning, color is
+  // just an accent on top of it:
+  //   triangleRight/triangleUp   player ship — nose points in the fire
+  //                              direction, picked from `vertical` below
+  //   invader                    shared "grunt" diamond — used by every
+  //                              rank-and-file enemy (Enemy A shmup,
+  //                              Enemy B invader, BOSS RUN's mini
+  //                              boss) so they read as the same kind of
+  //                              threat regardless of game or movement
+  //   boss                       bulkier hexagon reserved for boss-type
+  //                              enemies, so it reads as heavier at a glance
+  const ICONS = {
+    triangleRight: 'polygon(0% 0%, 100% 50%, 0% 100%)',
+    triangleUp: 'polygon(0% 100%, 50% 0%, 100% 100%)',
+    invader: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+    boss: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)'
+  };
+  // clip-path (unprefixed) covers current evergreen browsers; the Webkit
+  // variant is kept alongside for older Safari, matching how the rest of
+  // this file favors plain CSS over feature-detection.
+  function iconStyle(shapeName){
+    const shape = ICONS[shapeName];
+    return shape ? { clipPath: shape, WebkitClipPath: shape } : {};
+  }
 
-      // cosmetic lane dividers only \u2014 collision logic never touches these
+  // ---------- SHARED AXIS-SHOOTER ENGINE ----------
+  // A ship slides across N lanes, fires toward the far edge, reloads every
+  // MAG_SIZE shots — and any number of independent enemy *types* fly in
+  // against it. Each type in cfg.enemies fully defines itself: how many
+  // lanes it spans, how many hits it takes to kill, how it moves, how it
+  // shoots (cadence + how many of its own bullets can be in flight at
+  // once), and how it spawns/respawns (how many can be alive together, how
+  // many will ever spawn, how often). A classic wave of one-hit grunts, a
+  // multi-lane boss that soaks up several hits, and a one-hit mini boss
+  // escort the boss calls in are all just different parameter sets on the
+  // same TYPES list — nothing here special-cases any of them by name.
+  //
+  // Everything below is expressed in "along" (the fire/approach axis: real
+  // x when firing rightward, real y when firing upward) and "across" (the
+  // lane axis: the other one) — both top-left pixel offsets. sizeStyle()/
+  // setPos() are the only two places that translate that back into real
+  // left/top/width/height, and overlap() is the one place that compares
+  // two such rects — a single AABB test that works whether an enemy is
+  // locked to one lane or spans several.
+  function buildAxisShooter(ctx, cfg){
+    const vertical = cfg.vertical; // false = fires right (horizontal shmup-like), true = fires up (invaders-like)
+    const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
+    const LANE_COUNT = cfg.laneCount, NEEDED = cfg.needed;
+    // reaching NEEDED win-eligible kills before the clock runs out ends the
+    // round immediately via onWin() below regardless of mode. What happens
+    // if the clock runs out first depends on cfg.survivalGame (default
+    // true): a survival game counts simply
+    // surviving — nothing having reached the player's edge or rammed them —
+    // as a win too, since there's an endless wave rather than a fixed
+    // objective. A non-survival game (BOSS RUN) has a fixed, killable
+    // objective instead, so running out the clock without finishing it off
+    // is a loss even if the player never got hit.
+    ctx.survivalGame = cfg.survivalGame !== false;
+    const MAG_SIZE = cfg.magSize, RELOAD_MS = cfg.reloadMs;
+
+    const laneSpan = vertical ? w : h;
+    const laneSize = laneSpan / LANE_COUNT;
+    const laneCenter = i => i * laneSize + laneSize / 2;
+    // 'sweepDescend' enemies step down through LANE_COUNT levels along the
+    // approach axis as they bounce — unused by any other movement pattern.
+    const travelSpan = vertical ? h : w;
+    const levelSize = travelSpan / LANE_COUNT;
+    const levelCenter = lvl => lvl * levelSize + levelSize / 2;
+
+    const wrap = MR.makeEl('', { position: 'absolute', inset: '0' });
+    MR.stage.appendChild(wrap);
+
+    // cosmetic lane dividers only — collision logic never touches these
+    for(let i = 1; i < LANE_COUNT; i++){
+      wrap.appendChild(MR.makeEl('', vertical
+        ? { position: 'absolute', top: '0', bottom: '0', left: (i * laneSize) + 'px', borderLeft: '1px dashed var(--line)' }
+        : { position: 'absolute', left: '0', right: '0', top: (i * laneSize) + 'px', borderTop: '1px dashed var(--line)' }));
+    }
+    if(vertical){
+      // cosmetic level dividers — sweep mode only, purely visual
       for(let i = 1; i < LANE_COUNT; i++){
-        wrap.appendChild(MR.makeEl('', { position: 'absolute', left: '0', right: '0', top: (i * laneH) + 'px', borderTop: '1px dashed var(--line)' }));
+        wrap.appendChild(MR.makeEl('', { position: 'absolute', left: '0', right: '0', top: (i * levelSize) + 'px', borderTop: '1px dashed var(--line)' }));
       }
+    }
 
-      // lanes are thinner with 7 of them, so ship/enemy height scales down
-      // to fit rather than the fixed 20px used when there were only 3
-      const shipW = 30, shipH = Math.max(10, Math.min(20, laneH - 10)), shipX = 4;
-      let playerLane = 3;
-      const player = MR.makeEl('box', { width: shipW + 'px', height: shipH + 'px', background: 'var(--go)', left: shipX + 'px', zIndex: '5' });
-      wrap.appendChild(player);
+    // ---- coordinate helpers: along = approach axis, across = lane axis ----
+    function sizeStyle(alongSize, acrossSize){
+      return vertical ? { width: acrossSize + 'px', height: alongSize + 'px' } : { width: alongSize + 'px', height: acrossSize + 'px' };
+    }
+    function setPos(el, along, across){
+      if(vertical){ el.style.left = across + 'px'; el.style.top = along + 'px'; }
+      else { el.style.left = along + 'px'; el.style.top = across + 'px'; }
+    }
+    function alongOverlap(a, b){ return a.along < b.along + b.alongSize && a.along + a.alongSize > b.along; }
+    function acrossOverlap(a, b){ return a.across < b.across + b.acrossSize && a.across + a.acrossSize > b.across; }
+    // one AABB test covers every case now — a single-lane grunt exactly
+    // matches its old lane-index check, and it generalizes cleanly to any
+    // enemy spanning multiple lanes too.
+    function overlap(a, b){ return alongOverlap(a, b) && acrossOverlap(a, b); }
 
-      function updatePlayer(){ player.style.top = (laneY(playerLane) - shipH / 2) + 'px'; }
-      updatePlayer();
+    // ---- player ----
+    const shipAlong = 30, shipAcross = Math.max(10, Math.min(20, laneSize - 10));
+    const bulletDir = vertical ? -1 : 1;       // player fire direction along the approach axis
+    const approachDir = -bulletDir;            // direction enemies/enemy-fire travel (toward the player)
+    const nearAlong = vertical ? (travelSpan - 34) : 4; // player's fixed position along that axis
+    let playerLane = Math.floor(LANE_COUNT / 2);
 
-      function setLane(l){ playerLane = Math.max(0, Math.min(LANE_COUNT - 1, l)); updatePlayer(); }
+    const shipIcon = vertical ? 'triangleUp' : 'triangleRight'; // nose points toward the far edge, matching bulletDir
+    const player = MR.makeEl('box', Object.assign({ background: 'var(--go)', zIndex: '5' }, sizeStyle(shipAlong, shipAcross), iconStyle(shipIcon)));
+    wrap.appendChild(player);
 
-      let alive = true;
-      let kills = 0;
-      let ammo = MAG_SIZE;
-      let reloading = false;
-      let reloadTimer = null;
-      const enemies = [];
-      const bullets = [];
-      // Enemies can shoot back, but at most ENEMY_MAX_SHOOTERS bullets are
-      // ever in flight at once \u2014 this caps the incoming threat to a
-      // readable amount regardless of how many enemies are on screen,
-      // rather than letting a crowded screen turn into unavoidable fire.
-      const ENEMY_MAX_SHOOTERS = 1;
-      const enemyBullets = [];
+    function playerAcross(){ return laneCenter(playerLane) - shipAcross / 2; }
+    function updatePlayer(){ setPos(player, nearAlong, playerAcross()); }
+    updatePlayer();
+    function setLane(l){ playerLane = Math.max(0, Math.min(LANE_COUNT - 1, l)); updatePlayer(); }
+    function playerRect(){ return { along: nearAlong, alongSize: shipAlong, across: playerAcross(), acrossSize: shipAcross }; }
 
-      const stageLabelEl = document.getElementById('stageLabel');
-      function updateHud(){
-        if(!stageLabelEl) return;
-        const ammoText = reloading ? 'RELOADING\u2026' : ('ammo ' + ammo + '/' + MAG_SIZE);
-        const incomingText = '\u26a0\ufe0f ' + enemyBullets.length + '/' + ENEMY_MAX_SHOOTERS;
-        stageLabelEl.textContent = 'R-TYPE \u00b7 \uD83C\uDFAF ' + kills + '/' + NEEDED + ' \u00b7 ' + ammoText + ' \u00b7 ' + incomingText;
-      }
+    let alive = true, kills = 0, ammo = MAG_SIZE, reloading = false, reloadTimer = null;
+    const enemies = [], bullets = [], enemyBullets = [];
+
+    // ---- enemy types ----
+    // Each entry in cfg.enemies is a complete, independent enemy
+    // definition. Nothing downstream branches on "is this the boss?" —
+    // every instance just reads its own type's numbers.
+    //   id             label only, doesn't affect behavior
+    //   hp             hits to kill (default 1)
+    //   lanes          how many lanes wide it is (default 1)
+    //   size           along-axis length in px (default 26)
+    //   speed          along/across movement speed, scaled by ctx.speedMul like difficulty everywhere else
+    //   movement       'approach' (flies straight toward the player, single fixed lane-block),
+    //                  'sweepDescend' (bounces across the lane axis, stepping one level closer each bounce),
+    //                  'holdSweep' (flies in, then holds and only bounces across the lane axis), or
+    //                  'static' (doesn't move at all, just sits and shoots)
+    //   stopFrac       holdSweep/static only: where along the approach axis it stops/sits (0-1 of travelSpan)
+    //   color / ring   visuals — ring is an optional inset accent border
+    //   icon           optional shape name from ICONS ('invader', 'boss') drawn
+    //                  via clip-path in place of a plain rectangle (default: none)
+    //   maxShooters    how many of THIS type's bullets can be in flight at once (default unlimited)
+    //   shooterScope   'perInstance' (each instance gets its own cap) or 'sharedType' (all instances of
+    //                  this type share one pool) — default 'perInstance'
+    //   fireDelay/fireCooldown   [min,max] ms ranges for first shot / between shots
+    //   countsTowardWin   whether killing one of these counts toward cfg.needed (default true)
+    //   spawn.concurrent  max instances of this type alive at once (default unlimited)
+    //   spawn.count       max instances of this type that will EVER spawn this round (default unlimited)
+    //   spawn.every       ms between spawn attempts, scaled by ctx.speedMul (default 600)
+    //   spawn.minEvery    floor on the scaled interval above (default 200)
+    //   spawn.firstDelay  ms before the first spawn attempt (default 0)
+    const TYPES = (cfg.enemies || []).map(t => {
+      const rawSpawn = t.spawn || {};
+      const spawn = {
+        concurrent: rawSpawn.concurrent != null ? rawSpawn.concurrent : Infinity,
+        count: rawSpawn.count != null ? rawSpawn.count : Infinity,
+        every: Math.max(rawSpawn.minEvery != null ? rawSpawn.minEvery : 200, (rawSpawn.every != null ? rawSpawn.every : 600) / ctx.speedMul),
+        firstDelay: rawSpawn.firstDelay != null ? rawSpawn.firstDelay : 0
+      };
+      return {
+        id: t.id || '?',
+        hp: t.hp != null ? t.hp : 1,
+        lanes: t.lanes || 1,
+        size: t.size || 26,
+        speed: (t.speed != null ? t.speed : 0.2) * ctx.speedMul,
+        movement: t.movement || 'approach',
+        stopFrac: t.stopFrac != null ? t.stopFrac : 0.6,
+        color: t.color || 'var(--danger)',
+        ring: t.ring || null,
+        icon: t.icon || null,
+        maxShooters: t.maxShooters != null ? t.maxShooters : Infinity,
+        shooterScope: t.shooterScope || 'perInstance',
+        fireDelay: t.fireDelay || [500, 900],
+        fireCooldown: t.fireCooldown || [900, 1900],
+        countsTowardWin: t.countsTowardWin !== false,
+        spawn,
+        _spawned: 0,
+        _timer: spawn.firstDelay
+      };
+    });
+
+    const stageLabelEl = document.getElementById('stageLabel');
+    function updateHud(){
+      if(!stageLabelEl) return;
+      const ammoText = reloading ? 'RELOADING\u2026' : ('ammo ' + ammo + '/' + MAG_SIZE);
+      // total incoming capacity is the sum of every active attacker's own
+      // cap — a sharedType cap is counted once per type, not once per
+      // instance, so several grunts sharing one pool don't inflate it.
+      const seenSharedTypes = new Set();
+      let shooterCap = 0;
+      enemies.forEach(en => {
+        const type = en.type;
+        if(type.shooterScope === 'sharedType'){
+          if(seenSharedTypes.has(type)) return;
+          seenSharedTypes.add(type);
+        }
+        shooterCap += type.maxShooters;
+      });
+      const capText = shooterCap === Infinity ? '\u221e' : Math.max(shooterCap, 1);
+      const incomingText = '\u26a0\ufe0f ' + enemyBullets.length + '/' + capText;
+      stageLabelEl.textContent = cfg.hudLabel + ' \u00b7 \ud83c\udfaf ' + kills + '/' + NEEDED + ' \u00b7 ' + ammoText + ' \u00b7 ' + incomingText;
+    }
+    updateHud();
+
+    // ---- player bullets ----
+    const BW_ALONG = 16, BW_ACROSS = 12;
+    function spawnBullet(){
+      const along = nearAlong + (bulletDir > 0 ? shipAlong : 0);
+      const across = laneCenter(playerLane) - BW_ACROSS / 2;
+      const el = MR.makeEl('box', Object.assign({ background: 'var(--flash)' }, sizeStyle(BW_ALONG, BW_ACROSS)));
+      setPos(el, along, across);
+      wrap.appendChild(el);
+      bullets.push({ el, along, across, alongSize: BW_ALONG, acrossSize: BW_ACROSS });
+    }
+
+    function startReload(){
+      reloading = true;
       updateHud();
-
-      function spawnBullet(){
-        const bw = 10, bh = 4;
-        const x = shipX + shipW;
-        const el = MR.makeEl('box', { width: bw + 'px', height: bh + 'px', background: 'var(--flash)', top: (laneY(playerLane) - bh / 2) + 'px', left: x + 'px' });
-        wrap.appendChild(el);
-        bullets.push({ el, lane: playerLane, x, w: bw });
-      }
-
-      function startReload(){
-        reloading = true;
+      reloadTimer = setTimeout(() => {
+        if(!alive) return;
+        reloading = false;
+        ammo = MAG_SIZE;
         updateHud();
-        reloadTimer = setTimeout(()=>{
-          if(!alive) return;
-          reloading = false;
-          ammo = MAG_SIZE;
-          updateHud();
-        }, RELOAD_MS);
-      }
+      }, RELOAD_MS);
+    }
 
-      function fire(){
-        if(!alive || reloading || ammo <= 0) return;
-        spawnBullet();
-        ammo--;
-        if(ammo <= 0) startReload();
-        updateHud();
-      }
+    function fire(){
+      if(!alive || reloading || ammo <= 0) return;
+      spawnBullet();
+      ammo--;
+      if(ammo <= 0) startReload();
+      updateHud();
+    }
 
-      MR.setKeyHandler((e)=>{
-        if(e.key === 'ArrowUp') setLane(playerLane - 1);
-        else if(e.key === 'ArrowDown') setLane(playerLane + 1);
-        else if(e.key === ' ' || e.key === 'Enter'){
-          e.preventDefault();
-          if(!e.repeat) fire(); // ignore key-repeat autofire \u2014 each shot needs its own press
+    const decKey = vertical ? 'ArrowLeft' : 'ArrowUp';
+    const incKey = vertical ? 'ArrowRight' : 'ArrowDown';
+    MR.setKeyHandler((e) => {
+      if(e.key === decKey) setLane(playerLane - 1);
+      else if(e.key === incKey) setLane(playerLane + 1);
+      else if(e.key === ' ' || e.key === 'Enter'){
+        e.preventDefault();
+        if(!e.repeat) fire(); // ignore key-repeat autofire — each shot needs its own press
+      }
+    });
+
+    // tap the ship itself to fire (sits above the move zones via zIndex)
+    player.style.cursor = 'pointer';
+    player.addEventListener('click', fire);
+
+    // tap zones live on elements created fresh each round, wiped by clearStage()
+    const [zoneDec, zoneInc] = MR.splitZones(vertical);
+    zoneDec.addEventListener('click', () => setLane(playerLane - 1));
+    zoneInc.addEventListener('click', () => setLane(playerLane + 1));
+    wrap.appendChild(zoneDec);
+    wrap.appendChild(zoneInc);
+
+    // ---- enemies ----
+    function spawnEnemyOfType(type){
+      const acrossSize = Math.max(10, type.lanes * laneSize - 10);
+      const alongSize = type.size;
+      // pick a random valid block of `lanes` contiguous lanes and center
+      // the enemy within it
+      const maxStartLane = LANE_COUNT - type.lanes;
+      const startLane = Math.floor(Math.random() * (maxStartLane + 1));
+      const across = startLane * laneSize + (type.lanes * laneSize - acrossSize) / 2;
+
+      let along, phase, level, dir;
+      if(type.movement === 'sweepDescend'){ along = 0; level = 0; dir = Math.random() < 0.5 ? -1 : 1; }
+      else if(type.movement === 'holdSweep'){ along = travelSpan; phase = 'approach'; dir = Math.random() < 0.5 ? -1 : 1; }
+      else if(type.movement === 'static'){ along = travelSpan * type.stopFrac; }
+      else { along = travelSpan; } // approach
+
+      const style = Object.assign({ background: type.color }, sizeStyle(alongSize, acrossSize), iconStyle(type.icon));
+      if(type.ring) style.boxShadow = 'inset 0 0 0 2px ' + type.ring;
+      const el = MR.makeEl('box', style);
+      wrap.appendChild(el);
+      setPos(el, along, across);
+
+      enemies.push({
+        el, type, along, alongSize, across, acrossSize, dir, phase, level,
+        hp: type.hp,
+        // fireTimer counts down to this instance's next shot attempt,
+        // staggered per-instance so shots don't all line up, and re-rolled
+        // (see below) whenever an attempt is blocked by its shooter cap.
+        fireTimer: MR.rand(type.fireDelay[0], type.fireDelay[1])
+      });
+    }
+
+    function removeEnemy(en){ const i = enemies.indexOf(en); if(i > -1) enemies.splice(i, 1); en.el.remove(); }
+    function removeBullet(b){ const i = bullets.indexOf(b); if(i > -1) bullets.splice(i, 1); b.el.remove(); }
+    function removeEnemyBullet(b){ const i = enemyBullets.indexOf(b); if(i > -1) enemyBullets.splice(i, 1); b.el.remove(); }
+
+    function spawnEnemyBullet(en){
+      const type = en.type;
+      // a sweeping/descending enemy aims from the level it's currently on;
+      // everything else aims from wherever it currently sits along-axis
+      const along = (vertical && type.movement === 'sweepDescend') ? levelCenter(en.level) - BW_ALONG / 2 : en.along;
+      // aim from whichever lane the enemy's current center sits over —
+      // works the same whether it's locked to one lane or spans several
+      const nearestLane = Math.max(0, Math.min(LANE_COUNT - 1, Math.floor((en.across + en.acrossSize / 2) / laneSize)));
+      const across = laneCenter(nearestLane) - BW_ACROSS / 2;
+      const el = MR.makeEl('box', Object.assign({ background: 'var(--danger)' }, sizeStyle(BW_ALONG, BW_ACROSS)));
+      setPos(el, along, across);
+      wrap.appendChild(el);
+      enemyBullets.push({ el, along, across, alongSize: BW_ALONG, acrossSize: BW_ACROSS, owner: en, ownerType: type });
+    }
+
+    // enemy bullets travel at a flat speed regardless of movement pattern
+    const enemyBulletSpeed = (cfg.enemyBulletSpeed != null ? cfg.enemyBulletSpeed : 0.32) * ctx.speedMul;
+    // Bullets are fixed-speed and comfortably outrun the fastest enemy so
+    // a correctly-timed, correctly-loaded shot is always a safe kill — the
+    // risk is reading the spawn lane late or firing dry.
+    const bulletSpeed = cfg.bulletSpeed;
+
+    let lastT = performance.now();
+    function loop(t){
+      if(!alive) return;
+      const dt = t - lastT; lastT = t;
+
+      // ---- per-type spawning/respawning ----
+      // each type runs its own independent timer/concurrency/total-count
+      // budget, so a type that just lost an instance can respawn on its
+      // own schedule without touching any other type's pacing.
+      TYPES.forEach(type => {
+        if(type._spawned >= type.spawn.count) return;
+        const aliveOfType = enemies.reduce((n, e) => n + (e.type === type ? 1 : 0), 0);
+        if(aliveOfType >= type.spawn.concurrent) return;
+        type._timer -= dt;
+        if(type._timer <= 0){
+          spawnEnemyOfType(type);
+          type._spawned++;
+          type._timer = type.spawn.every;
         }
       });
 
-      // tap the ship itself to fire (sits above the move zones via zIndex)
-      player.style.cursor = 'pointer';
-      player.addEventListener('click', fire);
-
-      // tap zones live on elements created fresh each round, wiped by clearStage()
-      const [topZone, bottomZone] = MR.splitZones(false);
-      topZone.addEventListener('click', ()=> setLane(playerLane - 1));
-      bottomZone.addEventListener('click', ()=> setLane(playerLane + 1));
-      wrap.appendChild(topZone);
-      wrap.appendChild(bottomZone);
-
-      function spawnEnemy(){
-        const lane = Math.floor(Math.random() * LANE_COUNT);
-        const ew = 26, eh = shipH;
-        const el = MR.makeEl('box', { width: ew + 'px', height: eh + 'px', background: 'var(--danger)', top: (laneY(lane) - eh / 2) + 'px', left: w + 'px' });
-        wrap.appendChild(el);
-        // fireTimer counts down to this enemy's next shot attempt; staggered
-        // per-enemy so shots don't all line up, and re-rolled (see below)
-        // whenever an attempt is blocked by the ENEMY_MAX_SHOOTERS cap.
-        enemies.push({ el, lane, x: w, w: ew, fireTimer: 500 + Math.random() * 900 });
+      for(let i = bullets.length - 1; i >= 0; i--){
+        const b = bullets[i];
+        b.along += bulletDir * bulletSpeed * dt;
+        setPos(b.el, b.along, b.across);
+        if(bulletDir > 0 ? b.along > travelSpan + 20 : b.along + b.alongSize < -20) removeBullet(b);
       }
 
-      function removeEnemy(en){ const i = enemies.indexOf(en); if(i > -1) enemies.splice(i, 1); en.el.remove(); }
-      function removeBullet(b){ const i = bullets.indexOf(b); if(i > -1) bullets.splice(i, 1); b.el.remove(); }
+      const pRect = playerRect();
 
-      const enemyBulletSpeed = 0.32 * ctx.speedMul;
+      for(let i = enemies.length - 1; i >= 0; i--){
+        const en = enemies[i];
+        const type = en.type;
 
-      function spawnEnemyBullet(en){
-        const bw = 10, bh = 4;
-        const el = MR.makeEl('box', { width: bw + 'px', height: bh + 'px', background: 'var(--danger)', top: (laneY(en.lane) - bh / 2) + 'px', left: en.x + 'px' });
-        wrap.appendChild(el);
-        enemyBullets.push({ el, lane: en.lane, x: en.x, w: bw });
-      }
-
-      function removeEnemyBullet(b){ const i = enemyBullets.indexOf(b); if(i > -1) enemyBullets.splice(i, 1); b.el.remove(); }
-
-      // enemy speed is a flat px/ms figure (same convention as DINOJUMP's
-      // obstacles / BIRD HUNT's duck) rather than normalized to stage
-      // width, so difficulty comes purely from ctx.speedMul like everywhere
-      // else. Bullets are fixed-speed and comfortably outrun the fastest
-      // enemy so a correctly-timed, correctly-loaded shot is always a safe
-      // kill \u2014 the risk is reading the spawn lane late or firing dry.
-      // With the round now a flat 7000ms, spawnEvery is tuned so at least
-      // ~11-12 enemies spawn at baseline speedMul, giving enough shot
-      // opportunities to land NEEDED=10 kills even after ammo/reload
-      // pauses and the odd missed lane read; higher speedMul (from a
-      // winning streak) spawns more often still, which is fine since the
-      // player is expected to be scoring faster kills by then too.
-      const enemySpeed = 0.20 * ctx.speedMul;
-      const bulletSpeed = 0.55;
-      const spawnEvery = Math.max(380, 600 / ctx.speedMul);
-      let sinceSpawn = 200;
-
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = t - lastT; lastT = t;
-
-        sinceSpawn += dt;
-        if(sinceSpawn > spawnEvery){ sinceSpawn = 0; spawnEnemy(); }
-
-        for(let i = bullets.length - 1; i >= 0; i--){
-          const b = bullets[i];
-          b.x += bulletSpeed * dt;
-          b.el.style.left = b.x + 'px';
-          if(b.x > w + 20) removeBullet(b);
+        if(type.movement === 'approach'){
+          en.along += approachDir * type.speed * dt;
+          setPos(en.el, en.along, en.across);
+          if(approachDir < 0 ? en.along <= 0 : en.along >= travelSpan){ alive = false; ctx.onLose(); return; } // reached the player's edge — it wins
+        } else if(type.movement === 'sweepDescend'){
+          en.across += en.dir * type.speed * dt;
+          if(en.across <= 0){ en.across = 0; en.dir = 1; en.along += levelSize; en.level++; }
+          else if(en.across + en.acrossSize >= laneSpan){ en.across = laneSpan - en.acrossSize; en.dir = -1; en.along += levelSize; en.level++; }
+          setPos(en.el, en.along, en.across);
+          if(en.level >= LANE_COUNT - 1){ alive = false; ctx.onLose(); return; } // reached the base level — it wins
+        } else if(type.movement === 'holdSweep'){
+          // flies in, then holds that along-axis position and only sweeps
+          // back and forth across the lane axis from then on — no
+          // "reached the player's edge" auto-loss, since it never gets
+          // that far; the only way it beats the player is by ramming or
+          // gunning them down.
+          if(en.phase === 'approach'){
+            en.along += approachDir * type.speed * dt;
+            const stopAlong = travelSpan * type.stopFrac;
+            if(approachDir < 0 ? en.along <= stopAlong : en.along >= stopAlong){ en.along = stopAlong; en.phase = 'hold'; }
+          } else {
+            en.across += en.dir * type.speed * dt;
+            if(en.across <= 0){ en.across = 0; en.dir = 1; }
+            else if(en.across + en.acrossSize >= laneSpan){ en.across = laneSpan - en.acrossSize; en.dir = -1; }
+          }
+          setPos(en.el, en.along, en.across);
+        } else { // 'static' — sits still and shoots
+          setPos(en.el, en.along, en.across);
         }
 
-        for(let i = enemies.length - 1; i >= 0; i--){
-          const en = enemies[i];
-          en.x -= enemySpeed * dt;
-          en.el.style.left = en.x + 'px';
-          if(en.lane === playerLane && en.x < shipX + shipW && en.x + en.w > shipX){
-            alive = false; ctx.onLose(); return; // enemy hit the player
-          }
-          if(en.x <= 0){
-            alive = false; ctx.onLose(); return; // enemy reached the left border
-          }
+        if(overlap(en, pRect)){ alive = false; ctx.onLose(); return; } // it rammed the player
 
-          en.fireTimer -= dt;
-          if(en.fireTimer <= 0){
-            if(enemyBullets.length < ENEMY_MAX_SHOOTERS){
-              spawnEnemyBullet(en);
-              en.fireTimer = 900 + Math.random() * 1000; // cooldown before its next attempt
+        en.fireTimer -= dt;
+        if(en.fireTimer <= 0){
+          // a 'sharedType' cap pools bullets-in-flight across every
+          // instance of this type; 'perInstance' (the default) counts only
+          // this instance's own bullets — so e.g. a boss and the mini
+          // bosses it calls in each keep their own separate budget.
+          const scoped = type.shooterScope === 'sharedType';
+          const inFlight = enemyBullets.reduce((n, b) => n + ((scoped ? b.ownerType === type : b.owner === en) ? 1 : 0), 0);
+          if(inFlight < type.maxShooters){
+            spawnEnemyBullet(en);
+            en.fireTimer = MR.rand(type.fireCooldown[0], type.fireCooldown[1]); // cooldown before its next attempt
+          } else {
+            en.fireTimer = 150; // shooter slots full — retry again shortly
+          }
+        }
+      }
+
+      for(let i = enemyBullets.length - 1; i >= 0; i--){
+        const b = enemyBullets[i];
+        b.along += approachDir * enemyBulletSpeed * dt;
+        setPos(b.el, b.along, b.across);
+        if(approachDir > 0 ? b.along > travelSpan + 20 : b.along < -20){ removeEnemyBullet(b); continue; }
+        if(overlap(b, pRect)){ alive = false; ctx.onLose(); return; } // hit by enemy fire
+      }
+
+      for(let bi = bullets.length - 1; bi >= 0; bi--){
+        const b = bullets[bi];
+        for(let ei = enemies.length - 1; ei >= 0; ei--){
+          const en = enemies[ei];
+          if(overlap(b, en)){
+            removeBullet(b);
+            en.hp--;
+            if(en.hp > 0){
+              // flash instead of dying outright — it takes `hp` hits total
+              en.el.style.filter = 'brightness(2.4)';
+              setTimeout(() => { if(en.el) en.el.style.filter = ''; }, 90);
             } else {
-              en.fireTimer = 150; // shooter slots full \u2014 retry again shortly
-            }
-          }
-        }
-
-        for(let i = enemyBullets.length - 1; i >= 0; i--){
-          const b = enemyBullets[i];
-          b.x -= enemyBulletSpeed * dt;
-          b.el.style.left = b.x + 'px';
-          if(b.x < -20){ removeEnemyBullet(b); continue; }
-          if(b.lane === playerLane && b.x < shipX + shipW && b.x + b.w > shipX){
-            alive = false; ctx.onLose(); return; // hit by enemy fire
-          }
-        }
-
-        for(let bi = bullets.length - 1; bi >= 0; bi--){
-          const b = bullets[bi];
-          for(let ei = enemies.length - 1; ei >= 0; ei--){
-            const en = enemies[ei];
-            if(b.lane === en.lane && b.x < en.x + en.w && b.x + b.w > en.x){
-              removeBullet(b);
               removeEnemy(en);
-              kills++;
-              updateHud();
-              if(kills >= NEEDED){ alive = false; ctx.onWin(); return; }
-              break;
+              if(en.type.countsTowardWin){
+                kills++;
+                updateHud();
+                if(kills >= NEEDED){ alive = false; ctx.onWin(); return; }
+              }
             }
+            break;
           }
         }
-
-        MR.rafId = requestAnimationFrame(loop);
       }
-      MR.rafId = requestAnimationFrame(loop);
 
-      ctx.onCleanup = ()=>{
-        alive = false;
-        clearTimeout(reloadTimer);
-        if(MR.rafId) cancelAnimationFrame(MR.rafId);
-      };
-      // ctx.survivalGame = true (set above): running out the clock counts
-      // as a win here, unlike HUNT/SKEET, since surviving to the timeout
-      // without any enemy reaching the left border (or hitting the ship)
-      // is itself a valid win condition alongside reaching NEEDED kills.
+      MR.rafId = requestAnimationFrame(loop);
+    }
+    MR.rafId = requestAnimationFrame(loop);
+
+    ctx.onCleanup = () => {
+      alive = false;
+      clearTimeout(reloadTimer);
+      if(MR.rafId) cancelAnimationFrame(MR.rafId);
+    };
+    // ctx.survivalGame (set near the top, from cfg.survivalGame) decides
+    // what a timeout means: true and running out the clock is itself a
+    // valid win alongside reaching NEEDED kills; false and a timeout without
+    // NEEDED kills is a loss, since then there's a fixed objective to clear
+    // rather than an endless wave to outlast.
+  }
+
+
+  MR.games.push({
+    label: 'SHMUP',
+    desc: 'Mini side-scrolling shooter: move your ship across the 7 lanes with the up/down arrows (or tap the top/bottom of the screen), and fire with space or by tapping the ship itself. Every 3 shots you burn through a reload \u2014 no firing until it finishes \u2014 so line up shots carefully instead of spraying. Enemies shoot back (at most 1 shot incoming at once), so dodge by switching lanes.',
+    word: 'INCOMING!',
+    // fixed 7s round regardless of speedMul: difficulty comes from
+    // enemyMoveSpeed/spawnEvery scaling with ctx.speedMul inside
+    // buildAxisShooter, not from squeezing the clock.
+    timeLimit: s => 8000,
+    start(ctx){
+      buildAxisShooter(ctx, {
+        vertical: false, laneCount: 7, needed: 10, magSize: 3, reloadMs: 500, bulletSpeed: 0.60,
+        hudLabel: 'SHMUP',
+        enemies: [
+          { // Enemy A — the standard grunt: 1 lane, dies in 1 hit, flies straight in.
+            // Shares the 'invader' icon with INVADERS' invader and BOSS
+            // RUN's mini boss, so all three read as the same kind of threat.
+            id: 'A', hp: 1, lanes: 1, speed: 0.20, movement: 'approach',
+            icon: 'invader', maxShooters: 1, shooterScope: 'sharedType',
+            spawn: { every: 600, minEvery: 380 }
+          }
+        ]
+      });
     }
   });
 
 
   MR.games.push({
-    label: 'SPACE INVADERS',
-    // R-TYPE's mechanics rotated 90\u00b0: columns instead of lanes, ship
-    // slides left/right along the bottom instead of up/down, invaders
-    // descend from the top instead of scrolling in from the right. Same
-    // win/lose shape as R-TYPE (NEEDED kills OR survive the clock, lose
-    // if anything reaches the base level or hits the ship) so the two
-    // games feel like a matched pair rather than reskins with different rules.
-    desc: 'Mini top-down shooter: slide your ship along the 7 columns with the left/right arrows (or tap the left/right side of the screen), and fire upward with space or by tapping the ship itself. Every 3 shots you burn through a reload \u2014 no firing until it finishes \u2014 so line up shots carefully instead of spraying. Invaders sweep across 7 vertical levels, dropping a level each time they bounce off an edge, and shoot back from the center of their current level (at most 2 shots incoming at once). Only 12 invaders spawn per round, but if even one reaches the base level, they win. One shield appears above the player in a random column each round and soaks up incoming fire there.',
+    label: 'INVADERS',
+    // buildAxisShooter's mechanics rotated 90\u00b0: columns instead of
+    // lanes, ship slides left/right along the bottom instead of up/down,
+    // invaders sweep-and-descend from the top instead of flying straight
+    // in from the right. Same win/lose shape as SHMUP (NEEDED kills OR
+    // survive the clock, lose if anything reaches the player's edge or
+    // hits the ship) so the two games feel like a matched pair rather
+    // than reskins with different rules.
+    desc: 'Mini top-down shooter: slide your ship along the 7 columns with the left/right arrows (or tap the left/right side of the screen), and fire upward with space or by tapping the ship itself. Every 3 shots you burn through a reload \u2014 no firing until it finishes \u2014 so line up shots carefully instead of spraying. Invaders sweep across 7 vertical levels, dropping a level each time they bounce off an edge, and shoot back from the center of their current level (at most 2 shots incoming at once). Only 12 invaders spawn per round, but if even one reaches the base level, they win.',
     word: 'INVASION!',
-    // fixed 7s round regardless of speedMul, same reasoning as R-TYPE:
-    // difficulty comes from enemySpeed/spawnEvery scaling with
-    // ctx.speedMul, not from squeezing the clock.
+    // fixed 7s round regardless of speedMul, same reasoning as SHMUP.
     timeLimit: s => 8000,
     start(ctx){
-      const w = MR.screen.clientWidth - 36, h = MR.screen.clientHeight - 36;
-      const COL_COUNT = 7, ROW_COUNT = 7, NEEDED = 10;
-      // reaching NEEDED kills before the clock runs out ends the round
-      // immediately via onWin() below; running the clock out otherwise
-      // is now also a win, provided no invader has reached the base
-      // level in the meantime (that's an instant loss, handled where
-      // invaders are moved, further down).
-      ctx.survivalGame = true;
-      const MAG_SIZE = 3, RELOAD_MS = 650;
-      const colW = w / COL_COUNT;
-      const colX = i => i * colW + colW / 2;
-      // 7 vertical levels mirror the 7 columns: an invader steps down
-      // exactly one level (rowH) each time it bounces off a horizontal
-      // edge (see LEVEL_STEP below), and its shots always fire from the
-      // vertical center of whichever level it's currently sweeping.
-      const rowH = h / ROW_COUNT;
-      const rowCenterY = level => level * rowH + rowH / 2;
-
-      const wrap = MR.makeEl('', { position: 'absolute', inset: '0' });
-      MR.stage.appendChild(wrap);
-
-      // cosmetic column dividers only \u2014 collision logic never touches these
-      for(let i = 1; i < COL_COUNT; i++){
-        wrap.appendChild(MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', left: (i * colW) + 'px', borderLeft: '1px dashed var(--line)' }));
-      }
-      // cosmetic level (row) dividers only \u2014 same deal, purely visual
-      for(let i = 1; i < ROW_COUNT; i++){
-        wrap.appendChild(MR.makeEl('', { position: 'absolute', left: '0', right: '0', top: (i * rowH) + 'px', borderTop: '1px dashed var(--line)' }));
-      }
-
-      // columns are narrower with 7 of them, so ship/invader width scales
-      // down to fit rather than a fixed size
-      const shipH = 30, shipW = Math.max(10, Math.min(20, colW - 10)), shipY = h - 34;
-      let playerCol = 3;
-      const player = MR.makeEl('box', { width: shipW + 'px', height: shipH + 'px', background: 'var(--go)', top: shipY + 'px', zIndex: '5' });
-      wrap.appendChild(player);
-
-      function updatePlayer(){ player.style.left = (colX(playerCol) - shipW / 2) + 'px'; }
-      updatePlayer();
-
-      function setCol(c){ playerCol = Math.max(0, Math.min(COL_COUNT - 1, c)); updatePlayer(); }
-
-      // One shield sits above the player in a random column for the whole
-      // round \u2014 it's indestructible and only intercepts incoming invader
-      // fire (the player's own shots and invader ships pass through it
-      // untouched), giving a free bit of cover in whichever lane it lands.
-      const shieldW = Math.max(24, colW - 8), shieldH = 12;
-      const shieldCol = Math.floor(Math.random() * COL_COUNT);
-      const shieldX = colX(shieldCol) - shieldW / 2, shieldY = shipY - 44;
-      const shield = MR.makeEl('box', { width: shieldW + 'px', height: shieldH + 'px', left: shieldX + 'px', top: shieldY + 'px', background: 'var(--go)', opacity: '0.45', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' });
-      shield.textContent = '\ud83d\udee1\ufe0f';
-      wrap.appendChild(shield);
-
-      let alive = true;
-      let kills = 0;
-      let ammo = MAG_SIZE;
-      let reloading = false;
-      let reloadTimer = null;
-      const enemies = [];
-      const bullets = [];
-      // Invaders can shoot back, but at most ENEMY_MAX_SHOOTERS bullets are
-      // ever in flight at once \u2014 this caps the incoming threat to a
-      // readable amount regardless of how many invaders are on screen,
-      // rather than letting a crowded screen turn into unavoidable fire.
-      const ENEMY_MAX_SHOOTERS = 1;
-      const enemyBullets = [];
-
-      // Invaders no longer sit in one fixed column \u2014 each sweeps back
-      // and forth across the full width and only steps down a level when
-      // it bounces off an edge, so every hitbox check below is a real
-      // pixel-rectangle overlap rather than a column-index match.
-      function overlaps(ax, aw, ay, ah, bx, bw, by, bh){
-        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-      }
-      function playerX(){ return colX(playerCol) - shipW / 2; }
-
-      const stageLabelEl = document.getElementById('stageLabel');
-      function updateHud(){
-        if(!stageLabelEl) return;
-        const ammoText = reloading ? 'RELOADING\u2026' : ('ammo ' + ammo + '/' + MAG_SIZE);
-        const incomingText = '\u26a0\ufe0f ' + enemyBullets.length + '/' + ENEMY_MAX_SHOOTERS;
-        stageLabelEl.textContent = 'SPACE INVADERS \u00b7 \ud83c\udfaf ' + kills + '/' + NEEDED + ' \u00b7 ' + ammoText + ' \u00b7 ' + incomingText;
-      }
-      updateHud();
-
-      function spawnBullet(){
-        const bw = 4, bh = 10;
-        const x = colX(playerCol) - bw / 2, y = shipY;
-        const el = MR.makeEl('box', { width: bw + 'px', height: bh + 'px', background: 'var(--flash)', left: x + 'px', top: y + 'px' });
-        wrap.appendChild(el);
-        bullets.push({ el, x, y, w: bw, h: bh });
-      }
-
-      function startReload(){
-        reloading = true;
-        updateHud();
-        reloadTimer = setTimeout(()=>{
-          if(!alive) return;
-          reloading = false;
-          ammo = MAG_SIZE;
-          updateHud();
-        }, RELOAD_MS);
-      }
-
-      function fire(){
-        if(!alive || reloading || ammo <= 0) return;
-        spawnBullet();
-        ammo--;
-        if(ammo <= 0) startReload();
-        updateHud();
-      }
-
-      MR.setKeyHandler((e)=>{
-        if(e.key === 'ArrowLeft') setCol(playerCol - 1);
-        else if(e.key === 'ArrowRight') setCol(playerCol + 1);
-        else if(e.key === ' ' || e.key === 'Enter'){
-          e.preventDefault();
-          if(!e.repeat) fire(); // ignore key-repeat autofire \u2014 each shot needs its own press
-        }
+      buildAxisShooter(ctx, {
+        vertical: true, laneCount: 7, needed: 10, magSize: 3, reloadMs: 500, bulletSpeed: 0.60,
+        hudLabel: 'INVADERS',
+        enemies: [
+          { // Invader — 1 lane, dies in 1 hit, sweeps across and steps down a
+            // level each bounce; capped at 12 spawns total (not 12 alive at
+            // once), and every invader shares one 2-shot incoming budget so
+            // the HUD's "at most 2 shots incoming" stays a hard cap. Uses the
+            // same 'invader' icon as SHMUP's Enemy A and BOSS RUN's mini boss.
+            id: 'INVADER', hp: 1, lanes: 1, speed: 0.45, movement: 'sweepDescend',
+            icon: 'invader', maxShooters: 2, shooterScope: 'sharedType',
+            spawn: { every: 600, minEvery: 380, count: 12 }
+          }
+        ]
       });
+    }
+  });
 
-      // tap the ship itself to fire (sits above the move zones via zIndex)
-      player.style.cursor = 'pointer';
-      player.addEventListener('click', fire);
 
-      // tap zones live on elements created fresh each round, wiped by clearStage()
-      const [leftZone, rightZone] = MR.splitZones(true);
-      leftZone.addEventListener('click', ()=> setCol(playerCol - 1));
-      rightZone.addEventListener('click', ()=> setCol(playerCol + 1));
-      wrap.appendChild(leftZone);
-      wrap.appendChild(rightZone);
-
-      // each invader steps down by one full level (rowH) the moment it
-      // bounces off either horizontal edge \u2014 it sweeps the full width,
-      // drops a level, sweeps back the other way, drops again, and so on,
-      // rather than descending continuously like R-TYPE's enemies do
-      // horizontally. LEVEL_STEP matches rowH so it always lands exactly
-      // on the next of the 7 levels instead of drifting between them.
-      const LEVEL_STEP = rowH;
-
-      function spawnEnemy(){
-        const startCol = Math.floor(Math.random() * COL_COUNT);
-        const ew = shipW, eh = 26;
-        const x = colX(startCol) - ew / 2;
-        const dir = Math.random() < 0.5 ? -1 : 1;
-        const el = MR.makeEl('box', { width: ew + 'px', height: eh + 'px', background: 'var(--danger)', left: x + 'px', top: '0px' });
-        wrap.appendChild(el);
-        // fireTimer counts down to this invader's next shot attempt; staggered
-        // per-invader so shots don't all line up, and re-rolled (see below)
-        // whenever an attempt is blocked by the ENEMY_MAX_SHOOTERS cap.
-        // level tracks which of the 7 rows it currently occupies, used to
-        // center its shots on that row rather than its exact pixel y.
-        enemies.push({ el, x, y: 0, w: ew, h: eh, dir, level: 0, fireTimer: 500 + Math.random() * 900 });
-      }
-
-      function removeEnemy(en){ const i = enemies.indexOf(en); if(i > -1) enemies.splice(i, 1); en.el.remove(); }
-      function removeBullet(b){ const i = bullets.indexOf(b); if(i > -1) bullets.splice(i, 1); b.el.remove(); }
-
-      const enemyBulletSpeed = 0.32 * ctx.speedMul;
-
-      // Invaders fire from the vertical center of whichever level (row)
-      // they're currently sweeping, and from the horizontal center of
-      // whichever column lane they're currently over \u2014 not their exact
-      // pixel x/y \u2014 so shots always line up cleanly with the grid
-      // instead of firing from wherever mid-sweep they happened to be.
-      function spawnEnemyBullet(en){
-        const bw = 4, bh = 10;
-        const col = Math.max(0, Math.min(COL_COUNT - 1, Math.floor((en.x + en.w / 2) / colW)));
-        const x = colX(col) - bw / 2, y = rowCenterY(en.level) - bh / 2;
-        const el = MR.makeEl('box', { width: bw + 'px', height: bh + 'px', background: 'var(--danger)', left: x + 'px', top: y + 'px' });
-        wrap.appendChild(el);
-        enemyBullets.push({ el, x, y, w: bw, h: bh });
-      }
-
-      function removeEnemyBullet(b){ const i = enemyBullets.indexOf(b); if(i > -1) enemyBullets.splice(i, 1); b.el.remove(); }
-
-      // invader horizontal speed is a flat px/ms figure (same convention
-      // as R-TYPE's enemies) rather than normalized to stage width, so
-      // difficulty comes purely from ctx.speedMul like everywhere else.
-      // Bullets are fixed-speed and comfortably outrun the fastest invader
-      // so a correctly-timed, correctly-loaded shot is always a safe kill
-      // \u2014 the risk is reading the spawn column late or firing dry.
-      // spawnEvery is tuned so at least ~11-12 invaders spawn at baseline
-      // speedMul, giving enough shot opportunities to land NEEDED=10 kills
-      // even after ammo/reload pauses and the odd missed shot. MAX_ENEMIES
-      // caps the round at 12 invaders total \u2014 once that many have spawned,
-      // no more appear even if there's still time left.
-      const enemyHSpeed = 0.45 * ctx.speedMul;
-      const bulletSpeed = 0.60;
-      const spawnEvery = Math.max(380, 600 / ctx.speedMul);
-      const MAX_ENEMIES = 12;
-      let spawnedCount = 0;
-      let sinceSpawn = 200;
-
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = t - lastT; lastT = t;
-
-        if(spawnedCount < MAX_ENEMIES){
-          sinceSpawn += dt;
-          if(sinceSpawn > spawnEvery){ sinceSpawn = 0; spawnEnemy(); spawnedCount++; }
-        }
-
-        for(let i = bullets.length - 1; i >= 0; i--){
-          const b = bullets[i];
-          b.y -= bulletSpeed * dt;
-          b.el.style.top = b.y + 'px';
-          if(b.y + b.h < -20) removeBullet(b);
-        }
-
-        const pX = playerX();
-
-        for(let i = enemies.length - 1; i >= 0; i--){
-          const en = enemies[i];
-          en.x += en.dir * enemyHSpeed * dt;
-          if(en.x <= 0){
-            en.x = 0; en.dir = 1; en.y += LEVEL_STEP; en.level++;
-          } else if(en.x + en.w >= w){
-            en.x = w - en.w; en.dir = -1; en.y += LEVEL_STEP; en.level++;
+  MR.games.push({
+    label: 'BOSS RUN',
+    // Same SHMUP control scheme, but a single armored boss instead of a
+    // stream of grunts: it spans 2 lanes, rolls in, then holds and only
+    // sweeps up/down across those lanes — it takes 5 hits to bring down,
+    // and fires back with up to 2 shots in flight at once. Partway through
+    // it starts calling in mini bosses too: small single-lane escorts that
+    // die in one hit but bring their own bullet in on top of the boss's.
+    // Non-survival, unlike SHMUP/INVADERS: there's a fixed, killable
+    // objective (the boss), so simply surviving to the buzzer without
+    // finishing it off is a loss, not a win (cfg.survivalGame: false).
+    desc: 'Mini side-scrolling boss fight: move your ship across the 7 lanes with the up/down arrows (or tap the top/bottom of the screen), and fire with space or by tapping the ship itself. A single armored boss spanning 2 lanes rolls in from the right, then holds position and sweeps up and down \u2014 it takes 5 hits to bring down, and fires back with up to 2 shots in flight at once. It also calls in mini bosses: small single-lane escorts that die in one hit but add one more shot on screen at a time. Every 4 shots you burn through a reload. You must bring the boss down before time runs out \u2014 simply surviving isn\u2019t enough.',
+    word: 'BOSS INCOMING!',
+    // fixed round length, same reasoning as other alien games \u2014
+    // longer than those since there's more health to chew through.
+    timeLimit: s => 14000,
+    start(ctx){
+      buildAxisShooter(ctx, {
+        vertical: false, laneCount: 7, needed: 1, magSize: 4, reloadMs: 500, bulletSpeed: 0.60,
+        hudLabel: 'BOSS RUN', survivalGame: false,
+        enemies: [
+          { // Boss — spans 2 lanes, rolls in then holds and only sweeps
+            // across those lanes, takes 5 hits to bring down, only one ever
+            // spawns, and it counts as the single win-eligible kill. Gets
+            // its own bulkier 'boss' icon (a hexagon) instead of the shared
+            // grunt shape, plus a purple accent color to match its escorts.
+            id: 'BOSS', hp: 10, lanes: 2, speed: 0.20, movement: 'holdSweep', stopFrac: 0.62,
+            color: 'var(--life)', icon: 'boss', maxShooters: 2,
+            spawn: { count: 1, concurrent: 1 }
+          },
+          { // Mini boss — single-lane escort the boss calls in partway
+            // through, dies in one hit, doesn't count toward the win, and
+            // all mini bosses share a single incoming-shot slot (on top of
+            // the boss's own 2) so at most one is ever on screen at once.
+            // Reuses the shared 'invader' icon (same as Enemy A shmup /
+            // Enemy B invader) — the purple accent color is what
+            // marks it as part of the boss encounter, not its shape.
+            id: 'MINIBOSS', hp: 1, lanes: 1, speed: 0.20, movement: 'approach',
+            color: 'var(--life)', icon: 'invader', maxShooters: 1, shooterScope: 'sharedType', countsTowardWin: false,
+            spawn: { every: 3200, firstDelay: 2200, concurrent: 1 }
           }
-          en.el.style.left = en.x + 'px';
-          en.el.style.top = en.y + 'px';
-
-          if(overlaps(en.x, en.w, en.y, en.h, pX, shipW, shipY, shipH)){
-            alive = false; ctx.onLose(); return; // invader hit the player
-          }
-          if(en.level >= ROW_COUNT - 1){
-            alive = false; ctx.onLose(); return; // invader reached the base level \u2014 they win
-          }
-
-          en.fireTimer -= dt;
-          if(en.fireTimer <= 0){
-            if(enemyBullets.length < ENEMY_MAX_SHOOTERS){
-              spawnEnemyBullet(en);
-              en.fireTimer = 900 + Math.random() * 1000; // cooldown before its next attempt
-            } else {
-              en.fireTimer = 150; // shooter slots full \u2014 retry again shortly
-            }
-          }
-        }
-
-        for(let i = enemyBullets.length - 1; i >= 0; i--){
-          const b = enemyBullets[i];
-          b.y += enemyBulletSpeed * dt;
-          b.el.style.top = b.y + 'px';
-          if(b.y > h + 20){ removeEnemyBullet(b); continue; }
-          if(overlaps(b.x, b.w, b.y, b.h, shieldX, shieldW, shieldY, shieldH)){
-            removeEnemyBullet(b); continue; // absorbed by the shield
-          }
-          if(overlaps(b.x, b.w, b.y, b.h, pX, shipW, shipY, shipH)){
-            alive = false; ctx.onLose(); return; // hit by invader fire
-          }
-        }
-
-        for(let bi = bullets.length - 1; bi >= 0; bi--){
-          const b = bullets[bi];
-          for(let ei = enemies.length - 1; ei >= 0; ei--){
-            const en = enemies[ei];
-            if(overlaps(b.x, b.w, b.y, b.h, en.x, en.w, en.y, en.h)){
-              removeBullet(b);
-              removeEnemy(en);
-              kills++;
-              updateHud();
-              if(kills >= NEEDED){ alive = false; ctx.onWin(); return; }
-              break;
-            }
-          }
-        }
-
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-
-      ctx.onCleanup = ()=>{
-        alive = false;
-        clearTimeout(reloadTimer);
-        if(MR.rafId) cancelAnimationFrame(MR.rafId);
-      };
-      // ctx.survivalGame = true (set above): running out the clock counts
-      // as a win here, since surviving to the timeout without any invader
-      // reaching the base level (or hitting the ship) is itself a
-      // valid win condition alongside reaching NEEDED kills.
+        ]
+      });
     }
   });
 
