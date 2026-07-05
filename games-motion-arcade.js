@@ -508,6 +508,6 @@
   });
 
 
-  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'motion';
+  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'motion-arcade';
 
 })();

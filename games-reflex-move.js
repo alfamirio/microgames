@@ -770,6 +770,6 @@
   });
 
 
-  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'reflex';
+  for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'reflex-move';
 
 })();
