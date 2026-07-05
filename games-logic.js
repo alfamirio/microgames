@@ -230,67 +230,6 @@
     }
   });
 
-
-  MR.games.push({
-    label: 'PARITY',
-    desc: 'Numbers flash by — tap when one matches the rule.',
-    word: 'MATCH THE RULE',
-    timeLimit: s => 3600/s,
-    start(ctx){
-      const rules = [
-        { name: 'TAP: EVEN', test: n => n%2===0 },
-        { name: 'TAP: ODD', test: n => n%2===1 },
-        { name: 'TAP: MULT OF 3', test: n => n%3===0 }
-      ];
-      const rule = MR.pick(rules);
-
-      const wrap = document.createElement('div');
-      wrap.style.display='flex'; wrap.style.flexDirection='column';
-      wrap.style.alignItems='center'; wrap.style.gap='20px';
-
-      const ruleEl = document.createElement('div');
-      ruleEl.style.fontSize='12px'; ruleEl.style.letterSpacing='0.12em'; ruleEl.style.color='var(--dim)';
-      ruleEl.textContent = rule.name;
-      wrap.appendChild(ruleEl);
-
-      const numberEl = document.createElement('div');
-      numberEl.className = 'prompt-word';
-      numberEl.style.fontSize='46px';
-      wrap.appendChild(numberEl);
-
-      const btn = document.createElement('div');
-      btn.className = 'cell';
-      btn.style.padding='14px 30px'; btn.style.cursor='pointer';
-      btn.style.fontFamily='var(--display)'; btn.style.fontSize='16px';
-      btn.textContent = 'TAP';
-      wrap.appendChild(btn);
-
-      MR.stage.appendChild(wrap);
-
-      let current = Math.floor(MR.rand(0,12));
-      numberEl.textContent = current;
-
-      let alive = true;
-      // floored: read-then-decide, not pure reflex — keep it legible
-      const flipEvery = Math.max(450, 650/ctx.speedMul);
-      const flipTimer = setInterval(()=>{
-        if(!alive) return;
-        current = Math.floor(MR.rand(0,12));
-        numberEl.textContent = current;
-      }, flipEvery);
-
-      btn.addEventListener('click', ()=>{
-        if(!alive) return;
-        alive = false;
-        clearInterval(flipTimer);
-        rule.test(current) ? ctx.onWin() : ctx.onLose();
-      });
-
-      ctx.onCleanup = ()=>{ alive=false; clearInterval(flipTimer); };
-    }
-  });
-
-
   MR.games.push({
     label: 'MATCH TYPE',
     desc: 'Compare the two icons — tap SAME or DIFFERENT (or use S / D keys).',
@@ -451,6 +390,218 @@
     }
   });
 
+
+  MR.games.push({
+    label: 'MORE DOTS',
+    desc: 'Two clusters of scattered dots — tap the one with more.',
+    word: 'WHICH HAS MORE?',
+    timeLimit: s => 3200/s,
+    start(ctx){
+      const leftCount = 4 + Math.floor(MR.rand(0,8));
+      let rightCount;
+      do {
+        rightCount = 4 + Math.floor(MR.rand(0,8));
+      } while(Math.abs(rightCount-leftCount) < 3);
+
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.gap='16px';
+      row.style.width='100%'; row.style.height='65%';
+
+      function buildCluster(count, isCorrect){
+        const box = document.createElement('div');
+        box.className='cell';
+        box.style.position='relative';
+        box.style.flex='1'; box.style.cursor='pointer';
+        for(let i=0;i<count;i++){
+          const d = document.createElement('div');
+          d.className='dot';
+          d.style.width='16px'; d.style.height='16px';
+          d.style.background='var(--flash)';
+          d.style.position='absolute';
+          d.style.left = MR.rand(8,80)+'%';
+          d.style.top = MR.rand(8,80)+'%';
+          box.appendChild(d);
+        }
+        box.addEventListener('click', ()=>{
+          if(isCorrect) ctx.onWin(); else ctx.onLose();
+        });
+        return box;
+      }
+
+      row.appendChild(buildCluster(leftCount, leftCount>rightCount));
+      row.appendChild(buildCluster(rightCount, rightCount>leftCount));
+      MR.stage.appendChild(row);
+    }
+  });
+
+
+  MR.games.push({
+    label: 'MISSING PIECE',
+    desc: 'A tile is missing from the grid — tap the piece that completes it.',
+    word: "WHAT'S MISSING?",
+    timeLimit: s => 3400/s,
+    start(ctx){
+      const colors = ['#3ef5c0','#ff3e7f','#f4e94c','#7a8cff'];
+      const arrangement = MR.shuffle(colors);
+      const missingIdx = Math.floor(Math.random()*4);
+      const missingColor = arrangement[missingIdx];
+
+      const wrap = document.createElement('div');
+      wrap.style.display='flex'; wrap.style.flexDirection='column';
+      wrap.style.alignItems='center'; wrap.style.gap='26px'; wrap.style.width='100%';
+
+      const grid = document.createElement('div');
+      grid.style.display='grid'; grid.style.gridTemplateColumns='repeat(2,1fr)';
+      grid.style.gap='10px'; grid.style.width='45%';
+      arrangement.forEach((c,i)=>{
+        const cell = document.createElement('div');
+        cell.style.aspectRatio='1'; cell.style.borderRadius='10px';
+        if(i===missingIdx){
+          cell.style.border='3px dashed var(--dim)';
+          cell.style.boxSizing='border-box';
+        } else {
+          cell.style.background=c;
+        }
+        grid.appendChild(cell);
+      });
+      wrap.appendChild(grid);
+
+      const optRow = document.createElement('div');
+      optRow.style.display='flex'; optRow.style.gap='14px';
+      MR.shuffle(colors).forEach(c=>{
+        const piece = document.createElement('div');
+        piece.className='cell';
+        piece.style.width='58px'; piece.style.height='58px';
+        piece.style.background=c; piece.style.cursor='pointer';
+        piece.addEventListener('click', ()=>{
+          if(c===missingColor) ctx.onWin(); else ctx.onLose();
+        });
+        optRow.appendChild(piece);
+      });
+      wrap.appendChild(optRow);
+
+      MR.stage.appendChild(wrap);
+    }
+  });
+
+
+  MR.games.push({
+    label: 'MIRROR MATCH',
+    desc: 'Compare the shape to two versions — tap the one that\'s flipped.',
+    word: 'FIND THE MIRROR',
+    timeLimit: s => 3400/s,
+    start(ctx){
+      const colors = ['#3ef5c0','#ff3e7f','#f4e94c','#7a8cff','#ff9f4a'];
+      const color = MR.pick(colors);
+      // Asymmetric arrow shape: clearly different from its own mirror image.
+      const shapePath = 'polygon(0% 0%, 100% 50%, 0% 100%, 30% 50%)';
+
+      const wrap = document.createElement('div');
+      wrap.style.display='flex'; wrap.style.flexDirection='column';
+      wrap.style.alignItems='center'; wrap.style.gap='30px';
+
+      const original = document.createElement('div');
+      original.style.width='110px'; original.style.height='80px';
+      original.style.background=color;
+      original.style.clipPath = shapePath;
+      wrap.appendChild(original);
+
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.gap='30px';
+
+      const mirroredFirst = Math.random() < 0.5;
+      [mirroredFirst, !mirroredFirst].forEach(isMirrored=>{
+        const opt = document.createElement('div');
+        opt.className='cell';
+        opt.style.width='130px'; opt.style.height='100px';
+        opt.style.display='flex'; opt.style.alignItems='center'; opt.style.justifyContent='center';
+        opt.style.cursor='pointer';
+        const shape = document.createElement('div');
+        shape.style.width='110px'; shape.style.height='80px';
+        shape.style.background=color;
+        shape.style.clipPath = shapePath;
+        if(isMirrored) shape.style.transform = 'scaleX(-1)';
+        opt.appendChild(shape);
+        opt.addEventListener('click', ()=>{
+          if(isMirrored) ctx.onWin(); else ctx.onLose();
+        });
+        row.appendChild(opt);
+      });
+      wrap.appendChild(row);
+
+      MR.stage.appendChild(wrap);
+    }
+  });
+
+
+
+  MR.games.push({
+    label: 'GROUP BY RULE',
+    desc: 'Five shapes share a trait — color, size, or form. Tap the one that breaks it.',
+    word: 'FIND WHAT BREAKS THE PATTERN',
+    timeLimit: s => 3800/s,
+    start(ctx){
+      const colors = ['#3ef5c0','#ff3e7f','#f4e94c','#7a8cff','#ff9f4a','#4ac9ff','#c792ff','#ffe066'];
+      const n = 6;
+      const oddIdx = Math.floor(Math.random()*n);
+
+      // Every shape form is drawn via clip-path (or none, for the circle/
+      // square cases) so any of them can serve as the "base" or the "odd"
+      // form on a given round, not just a fixed circle-vs-square pair.
+      const shapeForms = [
+        { name:'circle',   apply(el){ el.style.borderRadius='50%'; el.style.clipPath='none'; } },
+        { name:'square',   apply(el){ el.style.borderRadius='6px'; el.style.clipPath='none'; } },
+        { name:'diamond',  apply(el){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'; } },
+        { name:'triangle', apply(el){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 100% 100%, 0% 100%)'; } },
+        { name:'pentagon', apply(el){ el.style.borderRadius='0'; el.style.clipPath='polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)'; } }
+      ];
+
+      // Pick which single trait varies this round. Every other trait stays
+      // identical across all 6 shapes, so the odd one is only ever wrong
+      // in exactly one dimension — the player has to notice which.
+      const rule = MR.pick(['color','size','form']);
+
+      const baseColor = MR.pick(colors);
+      let oddColor = baseColor;
+      if(rule === 'color'){
+        do { oddColor = MR.pick(colors); } while(oddColor === baseColor);
+      }
+
+      const baseSize = 56;
+      const oddSize = rule === 'size' ? baseSize * 0.55 : baseSize;
+
+      const baseForm = MR.pick(shapeForms);
+      let oddForm = baseForm;
+      if(rule === 'form'){
+        do { oddForm = MR.pick(shapeForms); } while(oddForm.name === baseForm.name);
+      }
+
+      const grid = document.createElement('div');
+      grid.style.display='grid';
+      grid.style.gridTemplateColumns='repeat(3, 1fr)';
+      grid.style.gridTemplateRows='repeat(2, 1fr)';
+      grid.style.gap='22px';
+      grid.style.width='80%';
+      grid.style.height='55%';
+      grid.style.placeItems='center';
+
+      for(let i=0;i<n;i++){
+        const isOdd = i===oddIdx;
+        const shape = document.createElement('div');
+        const size = isOdd ? oddSize : baseSize;
+        shape.style.width = size+'px';
+        shape.style.height = size+'px';
+        shape.style.background = isOdd ? oddColor : baseColor;
+        (isOdd ? oddForm : baseForm).apply(shape);
+        shape.style.cursor = 'pointer';
+        shape.addEventListener('click', ()=>{
+          if(isOdd) ctx.onWin(); else ctx.onLose();
+        });
+        grid.appendChild(shape);
+      }
+      MR.stage.appendChild(grid);
+    }
+  });
 
 
   for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'logic';

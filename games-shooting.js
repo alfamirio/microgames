@@ -399,7 +399,7 @@
         return { el, bodyW, bodyH };
       }
 
-      const MIN_LEG_LEN = 100, MAX_LEG_LEN = 200;
+      const MIN_LEG_LEN = 150, MAX_LEG_LEN = 300;
       const TURN_SPREAD = Math.PI * 0.7; // ~126° cone used when re-aiming off a wall
 
       // The duck lives entirely inside [0,w]x[0,h] for its whole life —
@@ -419,7 +419,7 @@
 
       function spawnDuck(){
         const { el, bodyW, bodyH } = makeDuckEl();
-        const speedBase = 0.30 * ctx.speedMul; // px/ms — a bit brisker than before
+        const speedBase = 0.20 * ctx.speedMul; // px/ms — a bit brisker than before
         const d = {
           el, bodyW, bodyH, speedBase,
           x: MR.rand(10, w-bodyW-10),

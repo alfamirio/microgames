@@ -4,52 +4,6 @@
   const CATEGORY_START = MR.games.length;
 
   MR.games.push({
-    label: 'SIMON',
-    desc: 'Press the arrow key or tile that is shown.',
-    word: 'PRESS IT',
-    timeLimit: s => 2400/s,
-    start(ctx){
-      const dirs = ['←','↑','→','↓'];
-      const keys = ['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'];
-      const idx = Math.floor(Math.random()*4);
-      const wrap = document.createElement('div');
-      wrap.style.display='flex'; wrap.style.flexDirection='column'; wrap.style.alignItems='center'; wrap.style.gap='24px';
-      const promptEl = document.createElement('div');
-      promptEl.className='prompt-word';
-      promptEl.textContent = dirs[idx];
-      promptEl.style.fontSize='64px';
-      wrap.appendChild(promptEl);
-      const row = document.createElement('div');
-      row.style.display='flex'; row.style.gap='10px';
-      const keyEls = dirs.map((d,i)=>{
-        const k = document.createElement('div');
-        k.className='arrow-key';
-        k.textContent = d;
-        row.appendChild(k);
-        return k;
-      });
-      wrap.appendChild(row);
-      MR.stage.appendChild(wrap);
-
-      MR.setKeyHandler((e)=>{
-        const pressedIdx = keys.indexOf(e.key);
-        if(pressedIdx===-1) return;
-        keyEls[pressedIdx].classList.add('active');
-        if(pressedIdx===idx) ctx.onWin(); else ctx.onLose();
-      });
-      // touch fallback: tap matching arrow tile
-      keyEls.forEach((k,i)=>{
-        k.style.cursor='pointer';
-        k.addEventListener('click', ()=>{
-          k.classList.add('active');
-          if(i===idx) ctx.onWin(); else ctx.onLose();
-        });
-      });
-    }
-  });
-
-
-  MR.games.push({
     label: 'COUNT',
     desc: 'Memorize how many dots flash, then pick the matching number.',
     word: 'COUNT!',
@@ -170,6 +124,74 @@
             }
           });
         });
+      }
+    }
+  });
+
+
+  MR.games.push({
+    label: 'ODD FLASH',
+    desc: 'Watch the colors flash by, then pick the one that flashed twice.',
+    word: 'WHICH REPEATED?',
+    timeLimit: s => 5000/s,
+    start(ctx){
+      const palette = ['#3ef5c0','#ff3e7f','#f4e94c'];
+      const colors = MR.shuffle(palette).slice(0,2);
+      const repeatColor = MR.pick(colors);
+
+      let sequence;
+      do {
+        sequence = MR.shuffle([...colors, repeatColor]);
+      } while(sequence.some((c,i)=> i>0 && sequence[i-1]===c));
+
+      const box = document.createElement('div');
+      box.style.width='120px'; box.style.height='120px';
+      box.style.borderRadius='16px';
+      box.style.background = 'transparent';
+      box.style.border = '3px solid var(--dim)';
+      box.style.boxSizing = 'border-box';
+      MR.stage.appendChild(box);
+
+      // Fixed, generous timing (only lightly speed-scaled) so the
+      // 3-flash sequence stays easy to hold in mind even as rounds speed up.
+      let step = 0;
+      function playStep(){
+        if(MR.roundToken() !== ctx.token) return;
+        if(step >= sequence.length){ box.remove(); askAnswer(); return; }
+        box.style.background = sequence[step];
+        setTimeout(()=>{
+          if(MR.roundToken() !== ctx.token) return;
+          box.style.background = 'transparent';
+          step++;
+          setTimeout(playStep, Math.max(260, 320/Math.sqrt(ctx.speedMul)));
+        }, Math.max(550, 650/Math.sqrt(ctx.speedMul)));
+      }
+      setTimeout(playStep, 500);
+
+      function askAnswer(){
+        const wrap = document.createElement('div');
+        wrap.style.display='flex'; wrap.style.flexDirection='column';
+        wrap.style.alignItems='center'; wrap.style.gap='20px'; wrap.style.width='100%';
+
+        const label = document.createElement('div');
+        label.className='prompt-word'; label.style.fontSize='20px';
+        label.textContent = 'which color repeated?';
+        wrap.appendChild(label);
+
+        const row = document.createElement('div');
+        row.style.display='flex'; row.style.gap='18px';
+        MR.shuffle(colors).forEach(c=>{
+          const cell = document.createElement('div');
+          cell.className='cell';
+          cell.style.width='90px'; cell.style.height='90px';
+          cell.style.background=c; cell.style.cursor='pointer';
+          cell.addEventListener('click', ()=>{
+            if(c===repeatColor) ctx.onWin(); else ctx.onLose();
+          });
+          row.appendChild(cell);
+        });
+        wrap.appendChild(row);
+        MR.stage.appendChild(wrap);
       }
     }
   });
@@ -304,6 +326,145 @@
       wrap.appendChild(buildRow(row1));
       wrap.appendChild(buildRow(row2));
       MR.stage.appendChild(wrap);
+    }
+  });
+
+
+  MR.games.push({
+    label: 'POSITION',
+    desc: 'Memorize where the dot flashed, then tap the matching spot.',
+    word: 'REMEMBER WHERE',
+    timeLimit: s => 3600/s,
+    start(ctx){
+      // Keep the dot (and every candidate) well inside the stage so the
+      // flash and the later tap targets never clip against an edge.
+      const targetPos = { x: MR.rand(12,88), y: MR.rand(12,80) };
+
+      const dot = document.createElement('div');
+      dot.style.position='absolute';
+      dot.style.width='28px'; dot.style.height='28px';
+      dot.style.borderRadius='50%';
+      dot.style.background='var(--flash)';
+      dot.style.left = targetPos.x+'%'; dot.style.top = targetPos.y+'%';
+      dot.style.transform = 'translate(-50%,-50%)';
+      MR.stage.appendChild(dot);
+
+      setTimeout(()=>{
+        if(MR.roundToken() !== ctx.token) return;
+        dot.remove();
+        spawnDistractors(askAnswer);
+      }, 700);
+
+      // Fires a burst of decoy dots (dim, not the flash color) at random
+      // spots for about a second before the answer options appear, so the
+      // player has to hold the real position in mind through visual noise.
+      function spawnDistractors(done){
+        const total = 6;
+        let spawned = 0;
+        function spawnOne(){
+          if(MR.roundToken() !== ctx.token) return;
+          if(spawned >= total){ done(); return; }
+          spawned++;
+          const d = document.createElement('div');
+          d.style.position='absolute';
+          d.style.width='24px'; d.style.height='24px';
+          d.style.borderRadius='50%';
+          d.style.background='var(--flash)';
+          d.style.left = MR.rand(10,90)+'%'; d.style.top = MR.rand(10,85)+'%';
+          d.style.transform = 'translate(-50%,-50%)';
+          MR.stage.appendChild(d);
+          setTimeout(()=>{ d.remove(); }, 220);
+          setTimeout(spawnOne, 160);
+        }
+        spawnOne();
+      }
+
+      function askAnswer(){
+        // Build the true spot plus three decoys, each kept a minimum
+        // distance from every other so the options are never ambiguous.
+        const positions = [targetPos];
+        while(positions.length < 4){
+          const cand = { x: MR.rand(10,90), y: MR.rand(10,82) };
+          const tooClose = positions.some(p => Math.hypot(p.x-cand.x, p.y-cand.y) < 22);
+          if(!tooClose) positions.push(cand);
+        }
+        const shuffled = MR.shuffle(positions);
+
+        const label = document.createElement('div');
+        label.className='prompt-word'; label.style.fontSize='18px';
+        label.style.position='absolute'; label.style.top='4%'; label.style.left='50%';
+        label.style.transform='translateX(-50%)';
+        label.textContent = 'where was it?';
+        MR.stage.appendChild(label);
+
+        shuffled.forEach(p=>{
+          const marker = document.createElement('div');
+          marker.className='cell';
+          marker.style.position='absolute';
+          marker.style.width='44px'; marker.style.height='44px';
+          marker.style.borderRadius='50%';
+          marker.style.left = p.x+'%'; marker.style.top = p.y+'%';
+          marker.style.transform = 'translate(-50%,-50%)';
+          marker.style.cursor='pointer';
+          marker.addEventListener('click', ()=>{
+            if(p===targetPos) ctx.onWin(); else ctx.onLose();
+          });
+          MR.stage.appendChild(marker);
+        });
+      }
+    }
+  });
+
+
+  MR.games.push({
+    label: 'CARD PEEK',
+    desc: 'Peek at all 6 cards, then find the one that matches the flipped card.',
+    word: 'MEMORIZE THE CARDS',
+    timeLimit: s => 4200/s,
+    start(ctx){
+      const colors = ['#3ef5c0','#ff3e7f','#f4e94c'];
+      const arrangement = MR.shuffle([...colors, ...colors]); // 3 pairs, 6 cards
+
+      const grid = document.createElement('div');
+      grid.style.display='grid';
+      grid.style.gridTemplateColumns='repeat(3, 1fr)';
+      grid.style.gridTemplateRows='repeat(2, 1fr)';
+      grid.style.gap='12px';
+      grid.style.width='80%';
+      grid.style.height='60%';
+
+      const cards = arrangement.map(color=>{
+        const card = document.createElement('div');
+        card.className='cell';
+        card.style.background = color;
+        card.style.transition = 'background 0.2s';
+        grid.appendChild(card);
+        return card;
+      });
+      MR.stage.appendChild(grid);
+
+      // Peek phase: show all 6 face up, then flip every card face down.
+      setTimeout(()=>{
+        if(MR.roundToken() !== ctx.token) return;
+        cards.forEach(c=>{ c.style.background='var(--dim)'; });
+        revealTarget();
+      }, 1100);
+
+      function revealTarget(){
+        const targetIdx = Math.floor(Math.random()*arrangement.length);
+        const pairIdx = arrangement.findIndex((c,i)=> i!==targetIdx && c===arrangement[targetIdx]);
+
+        cards[targetIdx].style.background = arrangement[targetIdx];
+        cards[targetIdx].style.cursor = 'default';
+
+        cards.forEach((c,i)=>{
+          if(i===targetIdx) return;
+          c.style.cursor = 'pointer';
+          c.addEventListener('click', ()=>{
+            if(i===pairIdx) ctx.onWin(); else ctx.onLose();
+          });
+        });
+      }
     }
   });
 

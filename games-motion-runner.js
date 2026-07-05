@@ -451,9 +451,10 @@
     word: 'CLIMB!',
     timeLimit: s => 7000 / s,
     start(ctx){
+      const { styleEl } = MR;
       const w = MR.screen.clientWidth - 26, h = MR.screen.clientHeight - 26;
 
-      // The wall is now split into 7 horizontal lanes the climber can slide
+      // The wall is split into 7 horizontal lanes the climber can slide
       // between (left/right presses shift one lane at a time) to dodge the
       // falling rocks. preferredCellW is the ideal width per lane; on
       // narrow phones the whole strip shrinks to fit rather than overflow.
@@ -465,37 +466,29 @@
       const cellW = (laneW - (numLanesH - 1) * laneGapH) / numLanesH;
       function laneCenterX(i){ return i * (cellW + laneGapH) + cellW / 2; }
 
-      const wrap = document.createElement('div');
-      wrap.style.position = 'absolute';
-      wrap.style.left = laneX+'px'; wrap.style.top = '0px';
-      wrap.style.width = laneW+'px'; wrap.style.height = h+'px';
-      wrap.style.background = 'var(--panel)';
-      wrap.style.borderRadius = '10px';
-      wrap.style.boxShadow = 'inset 0 0 0 1px var(--line)';
-      wrap.style.overflow = 'hidden';
+      const wrap = styleEl(document.createElement('div'), {
+        position:'absolute', left: laneX+'px', top:'0px',
+        width: laneW+'px', height: h+'px',
+        background:'var(--panel)', borderRadius:'10px',
+        boxShadow:'inset 0 0 0 1px var(--line)', overflow:'hidden'
+      });
       MR.stage.appendChild(wrap);
 
       // Lane strips: drawn as separate cells (rather than one solid wall)
       // with a visible gap of the panel's background color between each,
       // so all 7 lanes read clearly at a glance.
       for(let i=0;i<numLanesH;i++){
-        const laneCell = document.createElement('div');
-        laneCell.style.position = 'absolute';
-        laneCell.style.left = (i*(cellW+laneGapH))+'px';
-        laneCell.style.top = '0'; laneCell.style.bottom = '0';
-        laneCell.style.width = cellW+'px';
-        laneCell.style.background = 'var(--bezel)';
-        laneCell.style.borderRadius = '6px';
-        laneCell.style.boxShadow = 'inset 0 0 0 1px var(--line)';
-        wrap.appendChild(laneCell);
+        wrap.appendChild(styleEl(document.createElement('div'), {
+          position:'absolute', left:(i*(cellW+laneGapH))+'px', top:'0', bottom:'0',
+          width: cellW+'px', background:'var(--bezel)', borderRadius:'6px',
+          boxShadow:'inset 0 0 0 1px var(--line)'
+        }));
       }
 
-      const danger = document.createElement('div');
-      danger.style.position = 'absolute';
-      danger.style.left = '0'; danger.style.bottom = '0';
-      danger.style.width = laneW+'px'; danger.style.height = '0px';
-      danger.style.background = 'var(--danger)';
-      danger.style.opacity = '0.88';
+      const danger = styleEl(document.createElement('div'), {
+        position:'absolute', left:'0', bottom:'0',
+        width: laneW+'px', height:'0px', background:'var(--danger)', opacity:'0.88'
+      });
       wrap.appendChild(danger);
 
       // One-time keyframe for the "your turn" pulse on the active grip.
@@ -510,46 +503,33 @@
         document.head.appendChild(style);
       }
 
-      const leftGrip = document.createElement('div');
-      const rightGrip = document.createElement('div');
-      const leftLabel = document.createElement('div');
-      const rightLabel = document.createElement('div');
-      [leftGrip, rightGrip].forEach(g=>{
-        g.style.position = 'absolute';
-        g.style.top = '0'; g.style.bottom = '0';
-        g.style.width = '26px';
-        g.style.borderRadius = '6px';
-        g.style.transition = 'opacity 120ms ease, background 120ms ease, box-shadow 120ms ease';
-        g.style.transformOrigin = 'center';
-      });
-      [leftLabel, rightLabel].forEach(l=>{
-        l.style.position = 'absolute';
-        l.style.top = '50%'; l.style.left = '50%';
-        l.style.transform = 'translate(-50%,-50%)';
-        l.style.fontWeight = '800';
-        l.style.fontSize = '13px';
-        l.style.transition = 'color 120ms ease';
-        l.style.pointerEvents = 'none';
-      });
-      leftLabel.textContent = 'L';
-      rightLabel.textContent = 'R';
-      leftGrip.style.left = '4px';
-      rightGrip.style.right = '4px';
-      leftGrip.appendChild(leftLabel);
-      rightGrip.appendChild(rightLabel);
-      wrap.appendChild(leftGrip);
-      wrap.appendChild(rightGrip);
+      // Grip + its "L"/"R" label are built together since both sides are
+      // identical apart from which screen edge they sit on.
+      function makeGrip(text, edgeStyle){
+        const label = styleEl(document.createElement('div'), {
+          position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+          fontWeight:'800', fontSize:'13px', transition:'color 120ms ease', pointerEvents:'none'
+        });
+        label.textContent = text;
+        const grip = styleEl(document.createElement('div'), {
+          position:'absolute', top:'0', bottom:'0', width:'26px', borderRadius:'6px',
+          transition:'opacity 120ms ease, background 120ms ease, box-shadow 120ms ease',
+          transformOrigin:'center', ...edgeStyle
+        });
+        grip.appendChild(label);
+        wrap.appendChild(grip);
+        return { grip, label };
+      }
+      const { grip: leftGrip, label: leftLabel } = makeGrip('L', { left:'4px' });
+      const { grip: rightGrip, label: rightLabel } = makeGrip('R', { right:'4px' });
 
       const playerR = Math.max(9, Math.min(13, Math.floor(cellW / 2) - 3));
       let currentLane = Math.floor(numLanesH / 2); // start in the middle lane
-      const player = document.createElement('div');
-      player.style.position = 'absolute';
-      player.style.left = (laneCenterX(currentLane) - playerR)+'px';
-      player.style.width = (playerR*2)+'px'; player.style.height = (playerR*2)+'px';
-      player.style.borderRadius = '50%';
-      player.style.background = 'var(--go)';
-      player.style.boxShadow = '0 0 10px var(--go)';
-      player.style.zIndex = '2';
+      const player = styleEl(document.createElement('div'), {
+        position:'absolute', left:(laneCenterX(currentLane) - playerR)+'px',
+        width:(playerR*2)+'px', height:(playerR*2)+'px', borderRadius:'50%',
+        background:'var(--go)', boxShadow:'0 0 10px var(--go)', zIndex:'2'
+      });
       wrap.appendChild(player);
 
       const stageLabelEl = document.getElementById('stageLabel');
@@ -589,15 +569,12 @@
       const rungInset = 30;
       const rungs = [];
       for(let i=1;i<=numLanes;i++){
-        const rung = document.createElement('div');
-        rung.style.position = 'absolute';
-        rung.style.left = rungInset+'px';
-        rung.style.width = Math.max(0, laneW - rungInset*2)+'px';
-        rung.style.height = '3px';
-        rung.style.bottom = (laneGap*i - 1)+'px';
-        rung.style.background = 'var(--line)';
-        rung.style.borderRadius = '2px';
-        rung.style.zIndex = '1';
+        const rung = styleEl(document.createElement('div'), {
+          position:'absolute', left: rungInset+'px',
+          width: Math.max(0, laneW - rungInset*2)+'px', height:'3px',
+          bottom:(laneGap*i - 1)+'px', background:'var(--line)',
+          borderRadius:'2px', zIndex:'1'
+        });
         wrap.appendChild(rung);
         rungs.push(rung);
       }
@@ -652,14 +629,14 @@
         if(e.key==='ArrowRight') attemptClimb('R');
       });
 
-      const leftZone = document.createElement('div');
-      const rightZone = document.createElement('div');
-      [leftZone, rightZone].forEach(z=>{
-        z.style.position='absolute'; z.style.top='0'; z.style.bottom='0'; z.style.width='50%';
-        z.style.cursor='pointer'; z.style.touchAction='none';
+      const leftZone = styleEl(document.createElement('div'), {
+        position:'absolute', top:'0', bottom:'0', width:'50%', left:'0',
+        cursor:'pointer', touchAction:'none'
       });
-      leftZone.style.left='0';
-      rightZone.style.right='0';
+      const rightZone = styleEl(document.createElement('div'), {
+        position:'absolute', top:'0', bottom:'0', width:'50%', right:'0',
+        cursor:'pointer', touchAction:'none'
+      });
       leftZone.addEventListener('pointerdown', ()=> attemptClimb('L'));
       rightZone.addEventListener('pointerdown', ()=> attemptClimb('R'));
       MR.stage.appendChild(leftZone);
@@ -693,57 +670,46 @@
         if(!alive) return;
         const size = Math.min(cellW - 6, MR.rand(12, 18));
         const lane = Math.floor(MR.rand(0, numLanesH));
-        const x = laneCenterX(lane) - size/2;
-        const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.left = x+'px';
-        el.style.width = size+'px'; el.style.height = size+'px';
-        el.style.background = 'var(--danger)';
-        el.style.borderRadius = '3px';
-        el.style.transform = 'rotate(45deg)';
-        el.style.boxShadow = '0 0 8px var(--danger)';
-        el.style.zIndex = '3';
+        const el = styleEl(document.createElement('div'), {
+          position:'absolute', left:(laneCenterX(lane) - size/2)+'px',
+          width: size+'px', height: size+'px', background:'var(--danger)',
+          borderRadius:'3px', transform:'rotate(45deg)',
+          boxShadow:'0 0 8px var(--danger)', zIndex:'3'
+        });
         wrap.appendChild(el);
         obstacles.push({ el, lane, size, y: h + size });
         spawnTimer = setTimeout(spawnObstacle, MR.rand(1000, 1700));
       }
       spawnTimer = setTimeout(spawnObstacle, MR.rand(500, 900));
 
+      // Shared lose path for both the crumble and a falling rock.
+      function die(){
+        alive = false;
+        styleEl(player, { background:'var(--danger)', boxShadow:'0 0 14px var(--danger)' });
+        ctx.onLose();
+      }
+
       let lastT = performance.now();
       const startT = lastT;
       function loop(t){
         if(!alive) return;
         const dt = t-lastT; lastT = t;
-        // dangerHeight is now the single source of truth for both what's
-        // drawn AND what's checked for collision — previously the display
-        // used dangerY+dangerOffset (effectively starting from 0 immediately)
-        // while collision checked the raw, still-deeply-negative dangerY
-        // against py. That mismatch meant the red bar could visibly rise
-        // well past the player without ever registering a hit, since the
-        // real kill threshold sat far above what was on screen. Driving both
-        // off elapsed time removes that gap entirely.
+        // dangerHeight is the single source of truth for both what's drawn
+        // AND what's checked for collision — driving both off elapsed time
+        // keeps the visible red bar and the real kill threshold in sync.
         const elapsed = t - startT;
         const dangerHeight = Math.max(0, dangerSpeed * (elapsed - dangerHeadStartMs));
         danger.style.height = dangerHeight+'px';
         // Mercy period: lava can't kill until the player has cleared the
         // third step.
-        if(stepsClimbed >= 3 && dangerHeight >= py){
-          alive=false;
-          player.style.background = 'var(--danger)';
-          player.style.boxShadow = '0 0 14px var(--danger)';
-          ctx.onLose();
-          return;
-        }
+        if(stepsClimbed >= 3 && dangerHeight >= py){ die(); return; }
 
         for(let i=obstacles.length-1;i>=0;i--){
           const o = obstacles[i];
           o.y -= obstacleFallSpeed*dt;
           o.el.style.bottom = o.y+'px';
           if(o.lane === currentLane && Math.abs(o.y - py) < (playerR + o.size/2)){
-            alive = false;
-            player.style.background = 'var(--danger)';
-            player.style.boxShadow = '0 0 14px var(--danger)';
-            ctx.onLose();
+            die();
             return;
           }
           if(o.y < -o.size){

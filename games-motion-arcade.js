@@ -627,7 +627,7 @@
         poisonEls.set(cell.k, makePelletEl(cell, 'var(--danger)', false));
       }
 
-      spawnFruit();
+      for(let i=0;i<3;i++) spawnFruit();
       for(let i=0;i<3;i++) spawnPoison();
 
       let fruitsEaten = 0;

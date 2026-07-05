@@ -200,6 +200,12 @@
       window.addEventListener('keydown', keyHandler);
     },
     roundToken(){ return roundToken; },
+    // Shorthand for bulk-assigning inline styles, e.g.
+    // MR.styleEl(el, { position:'absolute', top:'0', width:'26px' })
+    // instead of one el.style.x = 'y' line per property. Individual
+    // games can still fall back to direct el.style.x assignment for
+    // one-off tweaks (e.g. inside a per-frame animation loop).
+    styleEl(el, styles){ Object.assign(el.style, styles); return el; },
     rafId: null
   };
   // ---------- ENGINE ----------
