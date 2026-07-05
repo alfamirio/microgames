@@ -92,6 +92,31 @@
       font-size:16px; color:var(--ink);
     }
     .panel-note{ font-size:12px; line-height:1.6; margin:0; max-width:180px; }
+    .toggle-row{
+      display:flex; align-items:center; justify-content:space-between;
+      width:100%; max-width:180px; gap:10px;
+      font-size:12px; color:var(--ink); cursor:pointer;
+    }
+    .toggle-switch{ position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; }
+    .toggle-switch input{
+      position:absolute; inset:0; opacity:0; margin:0; cursor:pointer; z-index:1;
+    }
+    .toggle-track{
+      position:absolute; inset:0; border-radius:999px;
+      background:var(--bg); box-shadow: inset 0 0 0 1px var(--line);
+      transition: background .15s, box-shadow .15s;
+      pointer-events:none;
+    }
+    .toggle-thumb{
+      position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+      background:var(--dim); transition: transform .15s, background .15s;
+    }
+    .toggle-switch input:checked + .toggle-track{
+      background:rgba(62,245,192,0.22); box-shadow: inset 0 0 0 1px var(--go);
+    }
+    .toggle-switch input:checked + .toggle-track .toggle-thumb{
+      transform:translateX(18px); background:var(--go);
+    }
     #rosterList{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3, 1fr); gap:7px 6px; width:100%; }
     #rosterList li{
       position:relative;
@@ -375,6 +400,26 @@
     font-size:22px; color:var(--dim); box-shadow: inset 0 0 0 1px var(--line);
   }
   .arrow-key.active{ background:var(--go); color:#0b0b10; }
+  /* small corner badge added by MR.addKeyHint / bindActivate / bindHold,
+     showing which key activates a control (e.g. "1", "Space"). Bright
+     fixed color + dark outline ring so it stays legible regardless of
+     whatever color/shape it's sitting on top of (dark tiles, colored
+     swatches, etc) — the app's dark theme made a subtle dark badge
+     nearly invisible in several games. */
+  .key-hint{
+    position:absolute; right:-8px; top:-8px;
+    min-width:20px; height:20px; padding:0 4px; box-sizing:border-box;
+    border-radius:6px; background:var(--flash);
+    color:#0b0b10; font-family:var(--mono); font-size:12px; font-weight:900;
+    display:flex; align-items:center; justify-content:center;
+    line-height:1; pointer-events:none; letter-spacing:0;
+    box-shadow: 0 0 0 2px rgba(11,11,16,0.85), 0 2px 5px rgba(0,0,0,0.5);
+    z-index:4;
+  }
+  /* toggled off from the side panel's "number hotkeys" switch — hides
+     every badge without touching any per-game logic, since key dispatch
+     is gated separately in MR.registerKey/registerHoldKey */
+  body.hotkeys-off .key-hint{ display:none; }
   .prompt-word{
     font-family:var(--display); font-weight:900; text-transform:uppercase;
     font-size:38px; color:var(--ink);
@@ -400,6 +445,22 @@
     <div class="panel-heading">controls</div>
     <div class="key-row"><span class="key-glyph">←</span><span class="key-glyph">→</span><span class="key-glyph">↑</span><span class="key-glyph">↓</span></div>
     <p class="panel-note">arrow keys, or click / tap directly on the screen — every game works with either.</p>
+
+    <label class="toggle-row">
+      <span>music</span>
+      <span class="toggle-switch">
+        <input type="checkbox" id="musicToggle">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </span>
+    </label>
+
+    <label class="toggle-row">
+      <span>number hotkeys</span>
+      <span class="toggle-switch">
+        <input type="checkbox" id="hotkeysToggle">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </span>
+    </label>
   </div>
 
   <div id="cabinet">

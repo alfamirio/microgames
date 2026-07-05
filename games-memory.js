@@ -75,19 +75,17 @@
 
       function enableInput(){
         let guessIdx = 0;
-        cells.forEach((c,i)=>{
-          c.style.cursor='pointer';
-          c.addEventListener('click', ()=>{
-            if(playback) return;
-            if(i === sequence[guessIdx]){
-              c.classList.add('lit');
-              setTimeout(()=>c.classList.remove('lit'),150);
-              guessIdx++;
-              if(guessIdx >= sequence.length) ctx.onWin();
-            } else {
-              ctx.onLose();
-            }
-          });
+        cells.forEach(c=>{ c.style.cursor='pointer'; });
+        MR.bindGridActivate(cells, (i,c)=>{
+          if(playback) return;
+          if(i === sequence[guessIdx]){
+            c.classList.add('lit');
+            setTimeout(()=>c.classList.remove('lit'),150);
+            guessIdx++;
+            if(guessIdx >= sequence.length) ctx.onWin();
+          } else {
+            ctx.onLose();
+          }
         });
       }
     }
@@ -136,11 +134,11 @@
         wrap.appendChild(label);
 
         const row = MR.makeEl('', { display: 'flex', gap: '18px' });
-        MR.shuffle(colors).forEach(c=>{
+        MR.shuffle(colors).forEach((c,i)=>{
           const cell = MR.makeEl('cell', { width: '90px', height: '90px', background: c, cursor: 'pointer' });
-          cell.addEventListener('click', ()=>{
+          MR.bindActivate(cell, ()=>{
             if(c===repeatColor) ctx.onWin(); else ctx.onLose();
-          });
+          }, { key: String(i+1) });
           row.appendChild(cell);
         });
         wrap.appendChild(row);
@@ -166,12 +164,9 @@
         shown.remove();
         const opts = MR.shuffle(colors);
         const { wrap: grid, cells } = MR.makeGrid(2, 2, { gap: '14px', width: '70%', cellStyles: { aspectRatio: '1', cursor: 'pointer' } });
-        cells.forEach((cell,i)=>{
-          const c = opts[i];
-          cell.style.background = c;
-          cell.addEventListener('click', ()=>{
-            if(c===target) ctx.onWin(); else ctx.onLose();
-          });
+        cells.forEach((cell,i)=>{ cell.style.background = opts[i]; });
+        MR.bindGridActivate(cells, (i)=>{
+          if(opts[i]===target) ctx.onWin(); else ctx.onLose();
         });
         MR.stage.appendChild(grid);
       }, 750);
@@ -230,11 +225,9 @@
 
       function buildRow(colorArr){
         const { wrap: r, cells } = MR.makeGrid(1, n, { gap: '8px', cellStyles: { aspectRatio: '1', cursor: 'pointer' } });
-        cells.forEach((cell,i)=>{
-          cell.style.background = colorArr[i];
-          cell.addEventListener('click', ()=>{
-            if(i===diffCol) ctx.onWin(); else ctx.onLose();
-          });
+        cells.forEach((cell,i)=>{ cell.style.background = colorArr[i]; });
+        MR.bindGridActivate(cells, (i)=>{
+          if(i===diffCol) ctx.onWin(); else ctx.onLose();
         });
         return r;
       }
@@ -297,11 +290,11 @@
         label.textContent = 'where was it?';
         MR.stage.appendChild(label);
 
-        shuffled.forEach(p=>{
+        shuffled.forEach((p,i)=>{
           const marker = MR.makeEl('cell', { position: 'absolute', width: '44px', height: '44px', borderRadius: '50%', left: p.x+'%', top: p.y+'%', transform: 'translate(-50%,-50%)', cursor: 'pointer' });
-          marker.addEventListener('click', ()=>{
+          MR.bindActivate(marker, ()=>{
             if(p===targetPos) ctx.onWin(); else ctx.onLose();
-          });
+          }, { key: String(i+1) });
           MR.stage.appendChild(marker);
         });
       }
@@ -336,12 +329,16 @@
         cards[targetIdx].style.background = arrangement[targetIdx];
         cards[targetIdx].style.cursor = 'default';
 
+        // Number keys go to the 5 selectable cards in on-screen order,
+        // skipping the already-revealed target card (same click+hotkey
+        // wiring as every other grid game — see MR.bindActivate).
+        let keyNum = 1;
         cards.forEach((c,i)=>{
           if(i===targetIdx) return;
           c.style.cursor = 'pointer';
-          c.addEventListener('click', ()=>{
+          MR.bindActivate(c, ()=>{
             if(i===pairIdx) ctx.onWin(); else ctx.onLose();
-          });
+          }, { key: String(keyNum++) });
         });
       }
     }

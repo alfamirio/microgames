@@ -135,7 +135,7 @@
       positions.forEach((p,i)=>{
         const b = MR.makeEl('target', { width: '56px', height: '56px', left: p.x+'%', top: p.y+'%', position: 'absolute', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '22px', color: '#0b0b10', fontWeight: '900' });
         b.textContent = i+1;
-        b.addEventListener('click', ()=>{
+        MR.bindActivate(b, ()=>{
           if(i+1 === next){
             MR.styleEl(b, { background: 'var(--dim)', pointerEvents: 'none' });
             next++;
@@ -143,7 +143,7 @@
           } else {
             ctx.onLose();
           }
-        });
+        }, { key: String(i+1), showHint: false });
         MR.stage.appendChild(b);
       });
     }
@@ -169,7 +169,7 @@
       let next = 0;
       shuffled.forEach((sz,i)=>{
         const b = MR.makeEl('target', { width: sz+'px', height: sz+'px', left: positions[i].x+'%', top: positions[i].y+'%', cursor: 'pointer' });
-        b.addEventListener('click', ()=>{
+        MR.bindActivate(b, ()=>{
           if(order[next] === i){
             MR.styleEl(b, { opacity: '0.25', pointerEvents: 'none' });
             next++;
@@ -177,7 +177,7 @@
           } else {
             ctx.onLose();
           }
-        });
+        }, { key: String(i+1) });
         MR.stage.appendChild(b);
       });
     }
@@ -185,7 +185,7 @@
 
   MR.games.push({
     label: 'MATCH TYPE',
-    desc: 'Compare the two icons — tap SAME or DIFFERENT (or use S / D keys).',
+    desc: 'Compare the two icons — tap SAME or DIFFERENT (or press 1 / 2).',
     word: 'SAME OR DIFFERENT?',
     timeLimit: s => 3000/s,
     start(ctx){
@@ -223,24 +223,18 @@
       }
 
       const btnSame = MR.makeEl('cell', { padding: '14px 22px', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '14px' });
-      btnSame.textContent = 'SAME (S)';
-      btnSame.addEventListener('click', ()=>choose(true));
+      btnSame.textContent = 'SAME';
+      MR.bindActivate(btnSame, ()=>choose(true), { key: '1' });
 
       const btnDiff = MR.makeEl('cell', { padding: '14px 22px', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '14px' });
-      btnDiff.textContent = 'DIFFERENT (D)';
-      btnDiff.addEventListener('click', ()=>choose(false));
+      btnDiff.textContent = 'DIFFERENT';
+      MR.bindActivate(btnDiff, ()=>choose(false), { key: '2' });
 
       btnRow.appendChild(btnSame);
       btnRow.appendChild(btnDiff);
       wrap.appendChild(btnRow);
 
       MR.stage.appendChild(wrap);
-
-      MR.setKeyHandler((e)=>{
-        const k = e.key.toLowerCase();
-        if(k==='s' || e.key==='ArrowLeft') choose(true);
-        else if(k==='d' || e.key==='ArrowRight') choose(false);
-      });
     }
   });
 
@@ -338,20 +332,20 @@
 
       const row = MR.makeEl('', { display: 'flex', gap: '16px', width: '100%', height: '65%' });
 
-      function buildCluster(count, isCorrect){
+      function buildCluster(count, isCorrect, key){
         const box = MR.makeEl('cell', { position: 'relative', flex: '1', cursor: 'pointer' });
         for(let i=0;i<count;i++){
           const d = MR.makeEl('dot', { width: '16px', height: '16px', background: 'var(--flash)', position: 'absolute', left: MR.rand(8,80)+'%', top: MR.rand(8,80)+'%' });
           box.appendChild(d);
         }
-        box.addEventListener('click', ()=>{
+        MR.bindActivate(box, ()=>{
           if(isCorrect) ctx.onWin(); else ctx.onLose();
-        });
+        }, { key });
         return box;
       }
 
-      row.appendChild(buildCluster(leftCount, leftCount>rightCount));
-      row.appendChild(buildCluster(rightCount, rightCount>leftCount));
+      row.appendChild(buildCluster(leftCount, leftCount>rightCount, '1'));
+      row.appendChild(buildCluster(rightCount, rightCount>leftCount, '2'));
       MR.stage.appendChild(row);
     }
   });
@@ -381,12 +375,14 @@
       wrap.appendChild(grid);
 
       const optRow = MR.makeEl('', { display: 'flex', gap: '14px' });
-      MR.shuffle(colors).forEach(c=>{
+      const pieceColors = MR.shuffle(colors);
+      const pieces = pieceColors.map(c=>{
         const piece = MR.makeEl('cell', { width: '58px', height: '58px', background: c, cursor: 'pointer' });
-        piece.addEventListener('click', ()=>{
-          if(c===missingColor) ctx.onWin(); else ctx.onLose();
-        });
         optRow.appendChild(piece);
+        return piece;
+      });
+      MR.bindGridActivate(pieces, (i)=>{
+        if(pieceColors[i]===missingColor) ctx.onWin(); else ctx.onLose();
       });
       wrap.appendChild(optRow);
 
@@ -414,14 +410,14 @@
       const row = MR.makeEl('', { display: 'flex', gap: '30px' });
 
       const mirroredFirst = Math.random() < 0.5;
-      [mirroredFirst, !mirroredFirst].forEach(isMirrored=>{
+      [mirroredFirst, !mirroredFirst].forEach((isMirrored, i)=>{
         const opt = MR.makeEl('cell', { width: '130px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' });
         const shape = MR.makeEl('', { width: '110px', height: '80px', background: color, clipPath: shapePath });
         if(isMirrored) shape.style.transform = 'scaleX(-1)';
         opt.appendChild(shape);
-        opt.addEventListener('click', ()=>{
+        MR.bindActivate(opt, ()=>{
           if(isMirrored) ctx.onWin(); else ctx.onLose();
-        });
+        }, { key: String(i+1) });
         row.appendChild(opt);
       });
       wrap.appendChild(row);
@@ -473,16 +469,27 @@
         do { oddForm = MR.pick(shapeForms); } while(oddForm.name === baseForm.name);
       }
 
-      const { wrap: grid, cells: shapes } = MR.makeGrid(2, 3, { gap: '22px', width: '80%', height: '55%', wrapStyles: { placeItems: 'center' }, cellClass: '', cellStyles: { cursor: 'pointer' } });
+      const { wrap: grid, cells } = MR.makeGrid(2, 3, { gap: '22px', width: '80%', height: '55%', wrapStyles: { placeItems: 'center' }, cellClass: '', cellStyles: { cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' } });
+
+      // Each cell is a plain, unclipped wrapper (holds the click/key
+      // binding + hint badge); the actual shape — which may have a
+      // clip-path applied — lives in a separate inner div. Putting the
+      // hint on the shape itself would get clipped away right along with
+      // it on the diamond/triangle/pentagon forms.
+      const shapes = cells.map(cell=>{
+        const inner = MR.makeEl('');
+        cell.appendChild(inner);
+        return inner;
+      });
 
       shapes.forEach((shape,i)=>{
         const isOdd = i===oddIdx;
         const size = isOdd ? oddSize : baseSize;
         MR.styleEl(shape, { width: size+'px', height: size+'px', background: isOdd ? oddColor : baseColor });
         (isOdd ? oddForm : baseForm).apply(shape);
-        shape.addEventListener('click', ()=>{
-          if(isOdd) ctx.onWin(); else ctx.onLose();
-        });
+      });
+      MR.bindGridActivate(cells, (i)=>{
+        if(i===oddIdx) ctx.onWin(); else ctx.onLose();
       });
       MR.stage.appendChild(grid);
     }

@@ -16,6 +16,10 @@
   const streakHint = document.getElementById('streakHint');
   const bgMusic = document.getElementById('bgMusic');
 
+  const MUSIC_KEY = 'microrush_music_enabled';
+  let musicEnabled = localStorage.getItem(MUSIC_KEY);
+  musicEnabled = musicEnabled === null ? true : musicEnabled === '1';
+
   let musicOk = true;
   let musicStarted = false;
   if(bgMusic){
@@ -28,12 +32,42 @@
   }
 
   function startMusic(){
-    if(!musicOk || musicStarted || !bgMusic) return;
+    if(!musicOk || musicStarted || !bgMusic || !musicEnabled) return;
     musicStarted = true;
     const p = bgMusic.play();
     if(p && typeof p.catch === 'function'){
       p.catch(()=>{ musicOk = false; musicStarted = false; });
     }
+  }
+
+  // Called from the side-panel music toggle. Handles three states: no run
+  // has started yet (nothing to do but flip the flag — startRun's own
+  // startMusic() call will respect it later), a run is active but music
+  // hasn't started (fresh start), and a run is active with music already
+  // started but paused (resume in place rather than restarting the track).
+  function setMusicEnabled(on){
+    musicEnabled = on;
+    try{ localStorage.setItem(MUSIC_KEY, on ? '1' : '0'); }catch(e){}
+    if(!bgMusic) return;
+    if(on){
+      if(running) startMusic();
+      if(musicStarted) bgMusic.play().catch(()=>{});
+    } else {
+      bgMusic.pause();
+    }
+  }
+
+  const HOTKEYS_KEY = 'microrush_hotkeys_enabled';
+  let hotkeysEnabled = localStorage.getItem(HOTKEYS_KEY);
+  hotkeysEnabled = hotkeysEnabled === null ? false : hotkeysEnabled === '1';
+
+  // Purely a dispatch gate + a CSS class — the badges themselves are
+  // always built (see MR.addKeyHint), just hidden via .hotkeys-off so
+  // toggling this mid-round doesn't require touching any live game state.
+  function setHotkeysEnabled(on){
+    hotkeysEnabled = on;
+    try{ localStorage.setItem(HOTKEYS_KEY, on ? '1' : '0'); }catch(e){}
+    document.body.classList.toggle('hotkeys-off', !on);
   }
   const stageLabel = document.getElementById('stageLabel');
   const rosterList = document.getElementById('rosterList');
@@ -97,6 +131,11 @@
   let flashTimeout = null;
   let cabinetFlashTimeout = null;
   let keyHandler = null;
+  // Backing store for MR.registerKey/MR.registerHoldKey (see the "SHARED
+  // INPUT HELPERS" block below) — reset every round so stale bindings from
+  // the previous game can't leak into the next one.
+  let keyRegistry = null;
+  let extraKeyListeners = [];
   let currentGame = null;
   let currentCtx = null;
   let runHistory = [];
@@ -135,6 +174,9 @@
     stage.innerHTML = '';
     stageLabel.textContent = '';
     if(keyHandler){ window.removeEventListener('keydown', keyHandler); keyHandler = null; }
+    keyRegistry = null;
+    extraKeyListeners.forEach(({target,type,fn})=> target.removeEventListener(type, fn));
+    extraKeyListeners = [];
   }
 
   function rand(min,max){ return Math.random()*(max-min)+min; }
@@ -197,6 +239,138 @@
       if(keyHandler){ window.removeEventListener('keydown', keyHandler); }
       keyHandler = fn;
       window.addEventListener('keydown', keyHandler);
+    },
+
+    // ---------- SHARED INPUT HELPERS ----------
+    // Goal: every discrete on-screen control a game builds (a tile, a
+    // button, a hold-target) can be wired with ONE call that gives it both
+    // a click/tap handler and, where it makes sense, a matching keyboard
+    // shortcut — instead of each game file hand-rolling its own pairing of
+    // addEventListener('click', ...) and MR.setKeyHandler(...) (the COMBO
+    // game's arrow-key/arrow-button pairing was the one place this was
+    // already done manually; these helpers generalize that pattern).
+    //
+    // NOTE — this is infrastructure only, added for review before any of
+    // the existing games are switched over to use it. Nothing below
+    // changes behavior for games that don't opt in.
+    //
+    // Key-value convention: pass the exact `event.key` string an element
+    // should respond to ('1', 'ArrowLeft', ' ' for space, etc). ' ' is
+    // normalized to the label "Space" for display purposes only; matching
+    // still happens on the real key value.
+
+    _normalizeKeyLabel(key){
+      return (key === ' ') ? 'Space' : key;
+    },
+
+    // Registers a single-press (keydown) shortcut. Multiple calls stack
+    // into one shared dispatcher rather than clobbering each other the way
+    // repeated raw setKeyHandler() calls would — this is what lets a grid
+    // of 9 cells each claim their own number key without fighting over the
+    // one keydown listener slot. Cleared automatically at the start of the
+    // next round (see clearStage above).
+    registerKey(key, handler){
+      if(!keyRegistry){
+        keyRegistry = {};
+        this.setKeyHandler((e)=>{
+          if(!hotkeysEnabled) return;
+          const h = keyRegistry[e.key];
+          if(h){ e.preventDefault(); h(e); }
+        });
+      }
+      keyRegistry[key] = handler;
+    },
+
+    // Registers a hold shortcut: onStart fires on keydown, onEnd fires on
+    // keyup, mirroring pointerdown/pointerup. Ignores key-repeat autofire
+    // (holding a key sends repeated keydowns) so onStart only fires once
+    // per physical press. Uses its own window listeners (independent of
+    // the registerKey dispatcher above, since it needs the keyup half
+    // too) — tracked in extraKeyListeners so clearStage can tear them down
+    // between rounds same as everything else.
+    registerHoldKey(key, onStart, onEnd){
+      let holding = false;
+      const down = (e)=>{
+        if(!hotkeysEnabled) return;
+        if(e.key !== key || holding) return;
+        holding = true;
+        onStart(e);
+      };
+      const up = (e)=>{
+        if(e.key !== key || !holding) return;
+        holding = false;
+        onEnd(e);
+      };
+      window.addEventListener('keydown', down);
+      window.addEventListener('keyup', up);
+      extraKeyListeners.push({ target: window, type: 'keydown', fn: down });
+      extraKeyListeners.push({ target: window, type: 'keyup', fn: up });
+    },
+
+    // Small corner badge showing which key activates `el` (e.g. "1",
+    // "→", "Space"). Purely visual — forces el to position:relative first
+    // if it doesn't already establish its own positioning context, so the
+    // badge (position:absolute) anchors to el itself.
+    // Deliberately checks el.style.position (not getComputedStyle) — this
+    // runs before el is necessarily attached to the document, and a
+    // not-yet-attached element's *computed* position can't be trusted to
+    // report 'static' correctly. Without this, every badge falls through
+    // to the nearest ancestor that IS positioned (typically the stage
+    // itself) and they all stack on top of each other in one corner.
+    addKeyHint(el, label){
+      const pos = el.style.position;
+      if(!pos || pos === 'static') el.style.position = 'relative';
+      const hint = this.makeEl('key-hint');
+      hint.textContent = this._normalizeKeyLabel(label);
+      el.appendChild(hint);
+      return hint;
+    },
+
+    // The one-call version for a plain click-or-press control: wires
+    // click, and — if opts.key is given — the matching keyboard shortcut
+    // plus (by default) a visible hint badge so players can discover it.
+    // handler receives the triggering event (click event or keydown event).
+    // opts: { key, showHint (default true), hintLabel (defaults to key) }
+    bindActivate(el, handler, opts){
+      opts = opts || {};
+      el.addEventListener('click', (e)=> handler(e));
+      if(opts.key){
+        this.registerKey(opts.key, handler);
+        if(opts.showHint !== false) this.addKeyHint(el, opts.hintLabel || opts.key);
+      }
+      return el;
+    },
+
+    // Hold-control version of bindActivate: pointer hold (down/up/leave/
+    // cancel) paired with an optional matching hold-key. onStart/onEnd
+    // receive the triggering event.
+    // opts: { key, showHint (default true), hintLabel (defaults to key) }
+    bindHold(el, onStart, onEnd, opts){
+      opts = opts || {};
+      el.addEventListener('pointerdown', (e)=> onStart(e));
+      el.addEventListener('pointerup', (e)=> onEnd(e));
+      el.addEventListener('pointerleave', (e)=> onEnd(e));
+      el.addEventListener('pointercancel', (e)=> onEnd(e));
+      if(opts.key){
+        this.registerHoldKey(opts.key, onStart, onEnd);
+        if(opts.showHint !== false) this.addKeyHint(el, opts.hintLabel || opts.key);
+      }
+      return el;
+    },
+
+    // Convenience for the grid/selection-game shape (ODD ONE, WHACK,
+    // MATCH, SPOT, CARD PEEK, buildOptionGrid, etc): binds click + number
+    // keys 1..N to `cells` in order, with hint badges. Only cells[0..8]
+    // get a shortcut (there's no natural single-digit key past 9).
+    // onPick(index, cell) is called the same way whether the player
+    // clicked or pressed the number key.
+    // opts: { showHints (default true) }
+    bindGridActivate(cells, onPick, opts){
+      opts = opts || {};
+      cells.forEach((cell,i)=>{
+        const key = i < 9 ? String(i+1) : null;
+        this.bindActivate(cell, ()=> onPick(i, cell), key ? { key, showHint: opts.showHints !== false } : {});
+      });
     },
     roundToken(){ return roundToken; },
     // Shorthand for bulk-assigning inline styles, e.g.
@@ -542,22 +716,24 @@
 
     // Renders `options` as a clickable 2-column grid (the quiz-answer
     // layout reused by MATH, COUNT, SPOT-THE-NUMBER, etc). Clicking a cell
-    // calls onPick(value). Returns the row element — append it yourself.
+    // — or pressing its number key (1..N, via bindGridActivate) — calls
+    // onPick(value). Returns the row element — append it yourself.
     buildOptionGrid(options, onPick, opts){
       opts = opts || {};
       const row = this.makeEl('', {
         display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'10px',
         width: opts.width || '70%'
       });
-      options.forEach(o=>{
+      const cells = options.map(o=>{
         const cell = this.makeEl('cell', {
           padding:'16px', textAlign:'center', cursor:'pointer',
           fontFamily:'var(--display)', fontSize: opts.fontSize || '22px'
         });
         cell.textContent = o;
-        cell.addEventListener('click', ()=> onPick(o));
         row.appendChild(cell);
+        return cell;
       });
+      this.bindGridActivate(cells, (i)=> onPick(options[i]));
       return row;
     },
 
@@ -1076,6 +1252,26 @@
     renderLives();
     populateRoster();
     renderStartOverlay();
+    bindPanelToggles();
+  }
+
+  // The two side-panel slide toggles (music, number hotkeys). Reflects
+  // whatever was persisted from a previous visit, and applies the
+  // hotkeys-off class immediately so badges are hidden from the very
+  // first round if that's the stored preference — not just after the
+  // first time someone flips the switch.
+  function bindPanelToggles(){
+    const musicToggle = document.getElementById('musicToggle');
+    if(musicToggle){
+      musicToggle.checked = musicEnabled;
+      musicToggle.addEventListener('change', ()=> setMusicEnabled(musicToggle.checked));
+    }
+    const hotkeysToggle = document.getElementById('hotkeysToggle');
+    if(hotkeysToggle){
+      hotkeysToggle.checked = hotkeysEnabled;
+      hotkeysToggle.addEventListener('change', ()=> setHotkeysEnabled(hotkeysToggle.checked));
+    }
+    document.body.classList.toggle('hotkeys-off', !hotkeysEnabled);
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', initRosterAndOverlay);

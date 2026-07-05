@@ -597,7 +597,7 @@
       // one static obstacle, fixed in place right on the target ring — the
       // orbit passes through its spot every lap, so it's a hazard the
       // player learns and times for, distinct from the crossing asteroids
-      const staticSize = 30;
+      const staticSize = 20;
       const staticHitDist = staticSize/2 + 11 + 3; // obstacle radius + dot radius + a little buffer
       const staticAngle = theta + Math.PI + MR.rand(-0.4,0.4); // opposite the dot's start, so it isn't an instant hit
       // radius wanders anywhere inside the safe band (with a little inset so
@@ -616,8 +616,8 @@
       // area (including the orbit itself) rather than just sitting still,
       // so avoiding one means timing a radius dodge to whenever it happens
       // to be passing through
-      const astSize = 24;
-      const astHitDist = astSize/2 + 11 + 3; // asteroid radius + dot radius + a little buffer
+      const astSize = 16;
+      const astHitDist = astSize/2 + 11 + 1; // asteroid radius + dot radius + a little buffer
       const asteroids = [];
       function spawnAsteroid(){
         const edge = Math.floor(Math.random()*4);

@@ -139,7 +139,7 @@
 
   MR.games.push({
     label: 'COMBO',
-    desc: 'Press the 3 arrows in order — tap the on-screen keys or use your keyboard.',
+    desc: 'Press the arrows in order — tap the on-screen keys or use your keyboard.',
     word: 'FOLLOW THE ARROWS',
     timeLimit: s => 4200/s,
     start(ctx){
