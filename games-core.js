@@ -1,23 +1,51 @@
 (function(){
   "use strict";
 
-  const stage = document.getElementById('stage');
-  const screen = document.getElementById('screen');
-  const cabinet = document.getElementById('cabinet');
-  const instructionEl = document.getElementById('instruction');
-  const instructionText = document.getElementById('instructionText');
-  const overlay = document.getElementById('overlay');
-  const timerbar = document.getElementById('timerbar');
-  const scoreVal = document.getElementById('scoreVal');
-  const bestVal = document.getElementById('bestVal');
-  const livesEl = document.getElementById('lives');
-  const livesCount = document.getElementById('livesCount');
-  const speedVal = document.getElementById('speedVal');
-  const streakHint = document.getElementById('streakHint');
-  const bgMusic = document.getElementById('bgMusic');
+  const $ = (id)=> document.getElementById(id);
+
+  const stage = $('stage');
+  const screen = $('screen');
+  const cabinet = $('cabinet');
+  const instructionEl = $('instruction');
+  const instructionText = $('instructionText');
+  const overlay = $('overlay');
+  const timerbar = $('timerbar');
+  const scoreVal = $('scoreVal');
+  const bestVal = $('bestVal');
+  const livesEl = $('lives');
+  const livesCount = $('livesCount');
+  const speedVal = $('speedVal');
+  const streakHint = $('streakHint');
+  const bgMusic = $('bgMusic');
+
+  // ---------- LOCAL STORAGE HELPERS ----------
+  // Every read/write in this file goes through these instead of touching
+  // localStorage directly, so a disabled/full/unavailable store (private
+  // browsing, quota exceeded, etc.) just silently no-ops instead of
+  // throwing and taking a whole handler down with it.
+  function lsGet(key, fallback){
+    try{ const v = localStorage.getItem(key); return v === null ? fallback : v; }
+    catch(e){ return fallback; }
+  }
+  function lsSet(key, value){
+    try{ localStorage.setItem(key, value); return true; }
+    catch(e){ return false; }
+  }
+  function lsRemove(key){
+    try{ localStorage.removeItem(key); }catch(e){}
+  }
+  function lsGetJSON(key, fallback){
+    try{
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    }catch(e){ return fallback; }
+  }
+  function lsSetJSON(key, value){
+    return lsSet(key, JSON.stringify(value));
+  }
 
   const MUSIC_KEY = 'microrush_music_enabled';
-  let musicEnabled = localStorage.getItem(MUSIC_KEY);
+  let musicEnabled = lsGet(MUSIC_KEY, null);
   musicEnabled = musicEnabled === null ? true : musicEnabled === '1';
 
   let musicOk = true;
@@ -47,7 +75,7 @@
   // started but paused (resume in place rather than restarting the track).
   function setMusicEnabled(on){
     musicEnabled = on;
-    try{ localStorage.setItem(MUSIC_KEY, on ? '1' : '0'); }catch(e){}
+    lsSet(MUSIC_KEY, on ? '1' : '0');
     if(!bgMusic) return;
     if(on){
       if(running) startMusic();
@@ -58,7 +86,7 @@
   }
 
   const HOTKEYS_KEY = 'microrush_hotkeys_enabled';
-  let hotkeysEnabled = localStorage.getItem(HOTKEYS_KEY);
+  let hotkeysEnabled = lsGet(HOTKEYS_KEY, null);
   hotkeysEnabled = hotkeysEnabled === null ? false : hotkeysEnabled === '1';
 
   // Purely a dispatch gate + a CSS class — the badges themselves are
@@ -66,14 +94,14 @@
   // toggling this mid-round doesn't require touching any live game state.
   function setHotkeysEnabled(on){
     hotkeysEnabled = on;
-    try{ localStorage.setItem(HOTKEYS_KEY, on ? '1' : '0'); }catch(e){}
+    lsSet(HOTKEYS_KEY, on ? '1' : '0');
     document.body.classList.toggle('hotkeys-off', !on);
   }
-  const stageLabel = document.getElementById('stageLabel');
-  const rosterList = document.getElementById('rosterList');
+  const stageLabel = $('stageLabel');
+  const rosterList = $('rosterList');
 
   const STORAGE_KEY = 'microrush_best';
-  let best = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+  let best = parseInt(lsGet(STORAGE_KEY, '0'), 10);
   bestVal.textContent = best;
 
   const DIFF_KEY = 'microrush_diff';
@@ -84,20 +112,26 @@
     { name: 'HARD',   lives: 3, base: 1.1,  growth: 0.050, streakForLife: 5, maxSpeed: 1.5 },
     { name: 'INSANE', lives: 2, base: 1.2,  growth: 0.060, streakForLife: 6, maxSpeed: 1.6 }
   ];
-  let diffIndex = parseInt(localStorage.getItem(DIFF_KEY) || '2', 10);
+  let diffIndex = parseInt(lsGet(DIFF_KEY, '2'), 10);
   if(isNaN(diffIndex) || diffIndex < 0 || diffIndex >= DIFFICULTIES.length) diffIndex = 2;
+  // activeDiff() is the difficulty locked in for the run in progress
+  // (set once per startRun()); selectedDiff() is whatever the picker is
+  // currently showing, which can move around between runs without
+  // affecting one already underway.
+  function activeDiff(){ return DIFFICULTIES[activeDiffIndex]; }
+  function selectedDiff(){ return DIFFICULTIES[diffIndex]; }
 
   function renderDiffPicker(container){
     if(!container) return;
     container.innerHTML =
-      '<div class="diff-caption">difficulty — <span class="diff-name">' + DIFFICULTIES[diffIndex].name + '</span> · life every ' + DIFFICULTIES[diffIndex].streakForLife + '</div>' +
+      '<div class="diff-caption">difficulty — <span class="diff-name">' + selectedDiff().name + '</span> · life every ' + selectedDiff().streakForLife + '</div>' +
       '<div class="diff-row">' +
         DIFFICULTIES.map((d,i)=>'<div class="diff-pill' + (i===diffIndex?' active':'') + '" data-index="'+i+'">'+(i+1)+'</div>').join('') +
       '</div>';
     container.querySelectorAll('.diff-pill').forEach(pill=>{
       pill.addEventListener('click', ()=>{
         diffIndex = parseInt(pill.dataset.index, 10);
-        localStorage.setItem(DIFF_KEY, String(diffIndex));
+        lsSet(DIFF_KEY, String(diffIndex));
         renderDiffPicker(container);
       });
     });
@@ -105,10 +139,8 @@
 
   const STATS_KEY = 'microrush_stats';
   function loadStats(){
-    try{
-      const raw = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-      return (raw && typeof raw === 'object') ? raw : {};
-    }catch(e){ return {}; }
+    const raw = lsGetJSON(STATS_KEY, {});
+    return (raw && typeof raw === 'object') ? raw : {};
   }
   let gameStats = loadStats();
 
@@ -116,14 +148,14 @@
     const s = gameStats[label] || (gameStats[label] = { score:0, plays:0, wins:0, losses:0 });
     s.plays++;
     if(win){ s.wins++; s.score++; } else { s.losses++; }
-    try{ localStorage.setItem(STATS_KEY, JSON.stringify(gameStats)); }catch(e){}
+    lsSetJSON(STATS_KEY, gameStats);
   }
 
   let score = 0;
   let lives = 3;
   let streak = 0;
   let activeDiffIndex = diffIndex;
-  function streakForLife(){ return DIFFICULTIES[activeDiffIndex].streakForLife; }
+  function streakForLife(){ return activeDiff().streakForLife; }
   let running = false;
   let roundToken = 0;
   let speedMul = 1;
@@ -143,7 +175,7 @@
   let dailyRoundIndex = 0;
   let pinnedLabels = new Set();
 
-  let maxLives = DIFFICULTIES[activeDiffIndex].lives;
+  let maxLives = activeDiff().lives;
 
   function renderLives(justRecovered){
     livesEl.innerHTML = '';
@@ -815,7 +847,7 @@
     running = false;
     if(score > best){
       best = score;
-      localStorage.setItem(STORAGE_KEY, String(best));
+      lsSet(STORAGE_KEY, String(best));
     }
     bestVal.textContent = best;
     if(dailyRun){
@@ -829,7 +861,7 @@
     const isDaily = dailyRun;
     overlay.innerHTML = `
       <h1>${isDaily ? "DAILY COMPLETE" : "GAME OVER"}</h1>
-      ${isDaily ? `<p class="daily-tag">DAILY — ${todayKey()} · ${DIFFICULTIES[activeDiffIndex].name}</p>` : ''}
+      ${isDaily ? `<p class="daily-tag">DAILY — ${todayKey()} · ${activeDiff().name}</p>` : ''}
       <div class="score">${score}</div>
       <p>${score>=15?'certified reflex machine.':'the mash reflex will save you. try again.'}</p>
       ${renderRunBreakdownMarkup()}
@@ -843,16 +875,16 @@
       <button class="arcade secondary" id="statsBtnEnd">per-game stats</button>
     `;
     overlay.classList.remove('hidden');
-    if(!isDaily) renderDiffPicker(document.getElementById('diffPickerEnd'));
-    document.getElementById('retryBtn').addEventListener('click', ()=>{
+    if(!isDaily) renderDiffPicker($('diffPickerEnd'));
+    $('retryBtn').addEventListener('click', ()=>{
       if(isDaily) renderStartOverlay(); else startRun();
     });
     if(isDaily){
-      document.getElementById('shareDailyBtn').addEventListener('click', ()=>{
+      $('shareDailyBtn').addEventListener('click', ()=>{
         copyDailyShareText(todaysDailyResult() || currentRunResultShape());
       });
     }
-    document.getElementById('statsBtnEnd').addEventListener('click', ()=>{
+    $('statsBtnEnd').addEventListener('click', ()=>{
       renderStatsView(renderGameOverOverlay);
     });
   }
@@ -867,24 +899,24 @@
       <div class="daily-block">
         <div class="daily-heading">DAILY — ${todayKey()}</div>
         <p class="daily-note">same game sequence for everyone today — pick a difficulty above, then compare scores.</p>
-        ${daily ? `<div class="daily-played">today's score: <b>${daily.score}</b> <span class="daily-diff-tag">(${daily.difficulty || DIFFICULTIES[diffIndex].name})</span></div>` : ''}
+        ${daily ? `<div class="daily-played">today's score: <b>${daily.score}</b> <span class="daily-diff-tag">(${daily.difficulty || selectedDiff().name})</span></div>` : ''}
         <button class="arcade secondary" id="dailyBtn">${daily ? 'replay daily' : "play today's run"}</button>
         ${daily ? `<button class="arcade secondary" id="shareDailyBtnStart">share result</button>` : ''}
       </div>
       <button class="arcade secondary" id="statsBtnStart">per-game stats</button>
     `;
     overlay.classList.remove('hidden');
-    renderDiffPicker(document.getElementById('diffPickerStart'));
-    document.getElementById('startBtn').addEventListener('click', ()=> startRun());
-    document.getElementById('dailyBtn').addEventListener('click', ()=> startRun({ daily:true }));
+    renderDiffPicker($('diffPickerStart'));
+    $('startBtn').addEventListener('click', ()=> startRun());
+    $('dailyBtn').addEventListener('click', ()=> startRun({ daily:true }));
     if(daily){
-      document.getElementById('shareDailyBtnStart').addEventListener('click', ()=>{
+      $('shareDailyBtnStart').addEventListener('click', ()=>{
         copyDailyShareText(daily);
-        const btn = document.getElementById('shareDailyBtnStart');
+        const btn = $('shareDailyBtnStart');
         if(btn) btn.textContent = 'copied!';
       });
     }
-    document.getElementById('statsBtnStart').addEventListener('click', ()=>{
+    $('statsBtnStart').addEventListener('click', ()=>{
       renderStatsView(renderStartOverlay);
     });
   }
@@ -893,7 +925,7 @@
     const payload = {
       exportedAt: new Date().toISOString(),
       best: best,
-      difficulty: DIFFICULTIES[diffIndex].name,
+      difficulty: selectedDiff().name,
       games: games.map(g=>{
         const s = gameStats[g.label] || { score:0, plays:0, wins:0, losses:0 };
         return {
@@ -950,11 +982,11 @@
       </div>
     `;
     overlay.classList.remove('hidden');
-    document.getElementById('statsBackBtn').addEventListener('click', backCb);
-    document.getElementById('downloadStatsBtn').addEventListener('click', downloadStatsJson);
-    document.getElementById('resetStatsBtn').addEventListener('click', ()=>{
+    $('statsBackBtn').addEventListener('click', backCb);
+    $('downloadStatsBtn').addEventListener('click', downloadStatsJson);
+    $('resetStatsBtn').addEventListener('click', ()=>{
       gameStats = {};
-      try{ localStorage.removeItem(STATS_KEY); }catch(e){}
+      lsRemove(STATS_KEY);
       renderStatsView(backCb);
     });
   }
@@ -978,6 +1010,16 @@
     clearTimeout(cabinetFlashTimeout);
     const duration = cls==='flash-win-double' ? 700 : 400;
     cabinetFlashTimeout = setTimeout(()=>{ cabinet.classList.remove(cls); }, duration);
+  }
+
+  // Snaps the timer bar to full width in a given color with no transition
+  // — the "reset before re-animating" step needed both when a fresh round
+  // starts (flash color) and right after a round ends (go/danger color),
+  // previously written out as the same three-line block in three places.
+  function setTimerBarState(color){
+    timerbar.style.transition = 'none';
+    timerbar.style.background = color;
+    timerbar.style.transform = 'scaleX(1)';
   }
 
   function endRound(win){
@@ -1004,7 +1046,7 @@
     clearStage();
     if(win){
       setScore(score+1);
-      speedMul = Math.min(DIFFICULTIES[activeDiffIndex].base + score*DIFFICULTIES[activeDiffIndex].growth, DIFFICULTIES[activeDiffIndex].maxSpeed);
+      speedMul = Math.min(activeDiff().base + score*activeDiff().growth, activeDiff().maxSpeed);
       updateSpeedDisplay();
       streak++;
       let recovered = false;
@@ -1014,18 +1056,14 @@
       }
       renderLives(recovered);
       flashCabinet(recovered ? 'flash-win-double' : 'flash-win');
-      timerbar.style.transition = 'none';
-      timerbar.style.background = 'var(--go)';
-      timerbar.style.transform = 'scaleX(1)';
+      setTimerBarState('var(--go)');
       setTimeout(nextRound, 260);
     } else {
       streak = 0;
       lives--;
       renderLives();
       flashCabinet('flash-lose');
-      timerbar.style.transition = 'none';
-      timerbar.style.background = 'var(--danger)';
-      timerbar.style.transform = 'scaleX(1)';
+      setTimerBarState('var(--danger)');
       if(lives<=0){
         setTimeout(showOverlayEnd, 420);
       } else {
@@ -1122,9 +1160,7 @@
       };
       currentCtx = ctx;
       game.start(ctx);
-      timerbar.style.transition = 'none';
-      timerbar.style.transform = 'scaleX(1)';
-      timerbar.style.background = 'var(--flash)';
+      setTimerBarState('var(--flash)');
       requestAnimationFrame(()=>{
         timerbar.style.transition = `transform ${limit}ms linear`;
         timerbar.style.transform = 'scaleX(0)';
@@ -1180,18 +1216,23 @@
 
   const DAILY_RESULT_KEY = 'microrush_daily_result';
   function loadDailyResult(){
-    try{ return JSON.parse(localStorage.getItem(DAILY_RESULT_KEY) || 'null'); }
-    catch(e){ return null; }
+    return lsGetJSON(DAILY_RESULT_KEY, null);
   }
-  function saveDailyResult(){
-    const result = {
+  // Both the "just finished a daily run" save and the "show me the result
+  // as it stands right now" fallback need the exact same shape — build it
+  // in one place so they can't drift apart.
+  function buildDailyResultShape(){
+    return {
       date: todayKey(),
       score: score,
-      difficulty: DIFFICULTIES[activeDiffIndex].name,
+      difficulty: activeDiff().name,
       pips: runHistory.map(e=>e.win),
       breakdown: buildRunBreakdown()
     };
-    try{ localStorage.setItem(DAILY_RESULT_KEY, JSON.stringify(result)); }catch(e){}
+  }
+  function saveDailyResult(){
+    const result = buildDailyResultShape();
+    lsSetJSON(DAILY_RESULT_KEY, result);
     return result;
   }
   function todaysDailyResult(){
@@ -1203,18 +1244,12 @@
     // fallback shape matching a saved daily result, built from the live
     // in-progress state — used if the saved copy isn't available for
     // whatever reason (e.g. localStorage write failed)
-    return {
-      date: todayKey(),
-      score: score,
-      difficulty: DIFFICULTIES[activeDiffIndex].name,
-      pips: runHistory.map(e=>e.win),
-      breakdown: buildRunBreakdown()
-    };
+    return buildDailyResultShape();
   }
 
   function dailyShareText(result){
     const pips = result.pips.map(w=>w?'🟩':'🟥').join('');
-    const difficulty = result.difficulty || DIFFICULTIES[diffIndex].name;
+    const difficulty = result.difficulty || selectedDiff().name;
     const breakdown = (result.breakdown || []).map(r=>{
       const label = r.label.padEnd(9, ' ');
       return `${label} ${r.won}W-${r.lost}L`;
@@ -1226,9 +1261,9 @@
   function copyDailyShareText(result){
     const text = dailyShareText(result);
     const done = (ok)=>{
-      const btn = document.getElementById('shareDailyBtn') || document.getElementById('shareDailyBtnStart');
+      const btn = $('shareDailyBtn') || $('shareDailyBtnStart');
       if(btn) btn.textContent = ok ? 'copied!' : 'copy failed — see below';
-      const fallback = document.getElementById('shareFallback');
+      const fallback = $('shareFallback');
       if(fallback) fallback.style.display = ok ? 'none' : 'block';
     };
     if(navigator.clipboard && navigator.clipboard.writeText){
@@ -1250,11 +1285,11 @@
     overlay.classList.add('hidden');
     startMusic();
     setScore(0);
-    maxLives = DIFFICULTIES[activeDiffIndex].lives;
+    maxLives = activeDiff().lives;
     lives = maxLives;
     streak = 0;
     runHistory = [];
-    speedMul = DIFFICULTIES[activeDiffIndex].base;
+    speedMul = activeDiff().base;
     updateSpeedDisplay();
     renderLives();
     running = true;
@@ -1287,12 +1322,12 @@
   // first round if that's the stored preference — not just after the
   // first time someone flips the switch.
   function bindPanelToggles(){
-    const musicToggle = document.getElementById('musicToggle');
+    const musicToggle = $('musicToggle');
     if(musicToggle){
       musicToggle.checked = musicEnabled;
       musicToggle.addEventListener('change', ()=> setMusicEnabled(musicToggle.checked));
     }
-    const hotkeysToggle = document.getElementById('hotkeysToggle');
+    const hotkeysToggle = $('hotkeysToggle');
     if(hotkeysToggle){
       hotkeysToggle.checked = hotkeysEnabled;
       hotkeysToggle.addEventListener('change', ()=> setHotkeysEnabled(hotkeysToggle.checked));
