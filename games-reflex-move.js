@@ -334,7 +334,7 @@
 
 
   MR.games.push({
-    label: 'RICOCHET',
+    label: 'BREAKOUT',
     desc: 'Breakout paddle — arrow keys or tap left/right, keep the ball off the floor for the whole round.',
     word: 'BOUNCE!',
     timeLimit: s => 2000/s,
@@ -766,6 +766,272 @@
       // which tracks whether the dot is inside the safe band at that
       // instant; hitting an asteroid, the static obstacle, or busting the
       // hard-out deviation ends the round immediately via ctx.onLose()
+    }
+  });
+
+
+  MR.games.push({
+    label: 'MINI GOLF',
+    desc: 'Mini golf swing: stop the POWER bar inside its green zone, then stop the PRECISION bar inside its (narrower) zone to sink the putt. Watch the ball actually fly the shot — miss POWER and it lands short or long; miss PRECISION and it curves off-line. Nail both and it flies straight into the cup. Tap/click SWING, or press space.',
+    word: 'TEE OFF!',
+    timeLimit: s => 3000 / s,
+    start(ctx){
+      const wrap = MR.makeEl('', { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' });
+
+      const heading = MR.makeEl('prompt-word', { fontSize: '18px' });
+      heading.textContent = '\u26F3 SINK THE PUTT';
+      wrap.appendChild(heading);
+
+      // ---- graphical course: the ball actually FLIES from the tee to its
+      // resting spot in a parabolic arc,
+      // rather than just rolling flat. Two things are decided independently:
+      //  - POWER sets how far along the fairway it travels (x-axis) — miss
+      //    the zone and it lands short or long, dead on-line.
+      //  - PRECISION sets how much it curves off the straight line to the
+      //    hole (y-axis, i.e. the "angle") — miss that zone and it hooks/
+      //    slices away from dead-center, regardless of distance.
+      // Both correct -> it flies straight into the cup. A weak/short power
+      // reads visually as a stubby little dribble (barely leaves the tee),
+      // matching a mistimed, "did basically nothing" swing.
+      const BALL_START_X = 8;    // % from left — the tee
+      const HOLE_X = 84;         // % from left — the cup
+      const CENTER_Y = 50;       // % — dead-straight line to the hole
+      const MAX_DEVIATE = 34;    // % max sideways curve on a badly-aimed shot
+      const ARC_PEAK = 44;       // px, visual flight-arc height at full distance
+
+      const course = MR.makeEl('', {
+        position: 'relative', width: '100%', height: '104px',
+        borderRadius: '10px', overflow: 'hidden',
+        background: 'linear-gradient(180deg, #1f7a4d, #175f3c)',
+        boxShadow: 'inset 0 0 0 1px var(--line), inset 0 0 18px rgba(0,0,0,0.35)'
+      });
+      for(let i=0;i<5;i++){
+        course.appendChild(MR.makeEl('', {
+          position: 'absolute', top: '0', bottom: '0', width: '20%', left: (i*20)+'%',
+          background: i%2===0 ? 'rgba(255,255,255,0.035)' : 'transparent'
+        }));
+      }
+      // straight dashed guide line showing the "ideal" flight path — makes
+      // any sideways curve on a bad-precision shot easy to read at a glance
+      const guide = MR.makeEl('', {
+        position: 'absolute', left: BALL_START_X+'%', top: CENTER_Y+'%', width: (HOLE_X-BALL_START_X)+'%', height: '0',
+        borderTop: '1px dashed rgba(255,255,255,0.18)', transform: 'translateY(-0.5px)'
+      });
+      course.appendChild(guide);
+      const pin = MR.makeEl('', {
+        position: 'absolute', left: HOLE_X+'%', top: CENTER_Y+'%', width: '2px', height: '30px',
+        transform: 'translate(-50%, -100%)'
+      });
+      pin.appendChild(MR.makeEl('', { position: 'absolute', left: '0', bottom: '0', width: '2px', height: '100%', background: '#e8e4d8' }));
+      pin.appendChild(MR.makeEl('', {
+        position: 'absolute', left: '2px', top: '0', width: '0', height: '0',
+        borderTop: '6px solid transparent', borderBottom: '6px solid transparent', borderLeft: '11px solid var(--danger)'
+      }));
+      course.appendChild(pin);
+      const hole = MR.makeEl('', {
+        position: 'absolute', left: HOLE_X+'%', top: CENTER_Y+'%', width: '15px', height: '15px',
+        borderRadius: '50%', background: '#05100a',
+        boxShadow: 'inset 0 2px 3px rgba(0,0,0,0.8), 0 0 0 2px rgba(255,255,255,0.15)',
+        transform: 'translate(-50%,-50%)', transition: 'box-shadow .3s'
+      });
+      const shadow = MR.makeEl('', {
+        position: 'absolute', left: BALL_START_X+'%', top: CENTER_Y+'%', width: '12px', height: '5px',
+        borderRadius: '50%', background: 'rgba(0,0,0,0.45)', transform: 'translate(-50%,-50%)'
+      });
+      const ball = MR.makeEl('', {
+        position: 'absolute', left: BALL_START_X+'%', top: CENTER_Y+'%', width: '11px', height: '11px',
+        borderRadius: '50%', background: '#f2f0ea',
+        boxShadow: '0 2px 3px rgba(0,0,0,0.5), inset -2px -2px 3px rgba(0,0,0,0.15)',
+        transform: 'translate(-50%,-50%)',
+        transition: 'opacity .25s ease, width .25s ease, height .25s ease'
+      });
+      course.appendChild(hole);
+      course.appendChild(shadow);
+      course.appendChild(ball);
+      wrap.appendChild(course);
+
+      // moves the ball+shadow to a ground position (x,y in %) with a
+      // visual arc-height (px) lifting the ball sprite above its shadow
+      function placeBall(x, y, heightPx){
+        shadow.style.left = x + '%';
+        shadow.style.top = y + '%';
+        const shrink = 1 - Math.min(0.55, (heightPx/ARC_PEAK) * 0.55);
+        shadow.style.transform = `translate(-50%,-50%) scale(${shrink})`;
+        shadow.style.opacity = String(0.15 + 0.35*shrink);
+        ball.style.left = x + '%';
+        ball.style.top = y + '%';
+        ball.style.transform = `translate(-50%, calc(-50% - ${heightPx}px))`;
+      }
+
+      function buildBar(labelText, zoneStart, zoneWidth){
+        const col = MR.makeEl('', { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', opacity: '0.35', transition: 'opacity .2s' });
+        const label = MR.makeEl('', { fontSize: '12px', letterSpacing: '0.12em', color: 'var(--dim)' });
+        label.textContent = labelText;
+        col.appendChild(label);
+        const track = MR.makeEl('', { position: 'relative', width: '100%', height: '16px', background: 'var(--bezel)', borderRadius: '8px', boxShadow: 'inset 0 0 0 1px var(--line)' });
+        const zone = MR.makeEl('', { position: 'absolute', top: '0', bottom: '0', left: zoneStart + '%', width: zoneWidth + '%', background: 'var(--go)', borderRadius: '8px' });
+        track.appendChild(zone);
+        const marker = MR.makeEl('', { position: 'absolute', top: '-5px', width: '6px', height: '26px', background: 'var(--flash)', borderRadius: '3px', left: '0%' });
+        track.appendChild(marker);
+        col.appendChild(track);
+        return { col, marker, zoneStart, zoneWidth };
+      }
+
+      // power zone is wide and forgiving (this bar just needs a decent
+      // hit); precision is the actual skill test, hence the narrower zone
+      // and slightly slower sweep so it stays humanly stoppable
+      const power = buildBar('POWER', MR.rand(50, 74), 15);
+      const prec = buildBar('PRECISION', MR.rand(44, 54), 10);
+      wrap.appendChild(power.col);
+      wrap.appendChild(prec.col);
+      power.col.style.opacity = '1';
+
+      const btn = MR.makeEl('cell', { position: 'relative', padding: '14px 34px', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '16px' });
+      btn.textContent = 'SWING';
+      wrap.appendChild(btn);
+
+      // always-visible key hint: this is the game's single core action
+      // (not a numeric shortcut), so the badge — and the key itself,
+      // wired below — stay on regardless of the "number hotkeys" toggle
+      const spaceHint = MR.makeEl('key-hint', { display: 'flex' });
+      spaceHint.textContent = 'Space';
+      btn.appendChild(spaceHint);
+
+      MR.stage.appendChild(wrap);
+
+      let phase = 'power'; // 'power' | 'precision' | 'done'
+      let alive = true;
+      let flying = false;
+      let flightRaf = null;
+      let pos = 0, dir = 1;
+      let powerGood = false, powerPos = 0;
+      let winTimer = null;
+
+      function activeBar(){ return phase === 'power' ? power : prec; }
+      function inZone(bar, p){ return p >= bar.zoneStart && p <= bar.zoneStart + bar.zoneWidth; }
+      function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+      // -1..1: how far past the zone the stop landed (0 = inside the zone)
+      function driftFor(bar, p){
+        if(inZone(bar, p)) return 0;
+        if(p < bar.zoneStart) return -((bar.zoneStart - p) / bar.zoneStart);
+        const overStart = bar.zoneStart + bar.zoneWidth;
+        return (p - overStart) / (100 - overStart);
+      }
+
+      let lastT = performance.now();
+      function loop(t){
+        if(!alive) return;
+        const dt = t - lastT; lastT = t;
+        const bar = activeBar();
+        // narrower zone (precision) sweeps a bit slower than the wide
+        // power zone, at the same difficulty scaling as everywhere else
+        const speed = (bar.zoneWidth < 14 ? 0.075 : 0.10) * ctx.speedMul;
+        pos += dir * dt * speed;
+        if(pos > 100){ pos = 100; dir = -1; }
+        if(pos < 0){ pos = 0; dir = 1; }
+        bar.marker.style.left = pos + '%';
+        MR.rafId = requestAnimationFrame(loop);
+      }
+      MR.rafId = requestAnimationFrame(loop);
+
+      // animates the ball from the tee to (toX,toY) along a parabola,
+      // sideways deviation eased in with t*t so a bad-precision shot
+      // reads as curving away as it travels, like a hook/slice
+      function flyBall(toX, toY, duration, heightScale, onDone){
+        flying = true;
+        const fromX = BALL_START_X, fromY = CENTER_Y;
+        const t0 = performance.now();
+        function step(now){
+          if(!flying) return;
+          let t = (now - t0) / duration;
+          if(t >= 1) t = 1;
+          const x = fromX + (toX - fromX) * t;
+          const y = fromY + (toY - fromY) * (t * t);
+          const arcH = 4 * ARC_PEAK * heightScale * t * (1 - t);
+          placeBall(x, y, arcH);
+          if(t < 1){
+            flightRaf = requestAnimationFrame(step);
+          } else {
+            flying = false;
+            onDone();
+          }
+        }
+        flightRaf = requestAnimationFrame(step);
+      }
+
+      function stop(){
+        if(!alive || phase === 'done') return;
+        if(phase === 'power'){
+          powerGood = inZone(power, pos);
+          powerPos = pos;
+          power.marker.style.background = powerGood ? 'var(--go)' : 'var(--danger)';
+          power.col.style.opacity = '0.5';
+          phase = 'precision';
+          prec.col.style.opacity = '1';
+          btn.textContent = 'PUTT';
+          pos = 0; dir = 1;
+          return;
+        }
+
+        // precision phase — resolve the putt
+        const precGood = inZone(prec, pos);
+        prec.marker.style.background = precGood ? 'var(--go)' : 'var(--danger)';
+        phase = 'done';
+        alive = false;
+        if(MR.rafId) cancelAnimationFrame(MR.rafId);
+
+        const win = powerGood && precGood;
+        const holeDist = HOLE_X - BALL_START_X;
+        let travel;
+        if(powerGood){
+          travel = holeDist;
+        } else {
+          const d = driftFor(power, powerPos);
+          // undershoot: a weak/mistimed swing barely nudges it forward;
+          // overshoot: it rolls on past the cup
+          travel = d < 0 ? holeDist * clamp(1 + d*0.9, 0.06, 1) : holeDist * (1 + d*0.55);
+        }
+        const finalX = win ? HOLE_X : clamp(BALL_START_X + travel, 5, 97);
+        const aimDrift = (win || precGood) ? 0 : driftFor(prec, pos);
+        const finalY = win ? CENTER_Y : clamp(CENTER_Y + aimDrift*MAX_DEVIATE, 12, 88);
+
+        const travelFrac = clamp(travel / holeDist, 0.08, 1.3);
+        const heightScale = win ? 1 : clamp(travelFrac, 0.14, 1.15);
+        const duration = 560 + 180 * Math.min(1, travelFrac);
+
+        flyBall(finalX, finalY, duration, heightScale, ()=>{
+          if(win){
+            hole.style.boxShadow = 'inset 0 2px 3px rgba(0,0,0,0.8), 0 0 0 3px var(--go), 0 0 14px rgba(62,245,192,0.8)';
+            ball.style.opacity = '0';
+            ball.style.width = '4px'; ball.style.height = '4px';
+            shadow.style.opacity = '0';
+            winTimer = setTimeout(()=> ctx.onWin(), 220);
+          } else {
+            winTimer = setTimeout(()=> ctx.onLose(), 260);
+          }
+        });
+      }
+
+      btn.addEventListener('click', ()=> stop());
+      // space bar always swings — deliberately bypasses MR.registerKey
+      // (and the "number hotkeys" toggle that gates it) since this is the
+      // game's one core action, discoverable via the badge above, not a
+      // numeric grid shortcut
+      function onSpace(e){
+        if(e.key !== ' ' && e.code !== 'Space') return;
+        e.preventDefault();
+        stop();
+      }
+      window.addEventListener('keydown', onSpace);
+
+      ctx.onCleanup = ()=>{
+        alive = false;
+        flying = false;
+        clearTimeout(winTimer);
+        if(MR.rafId) cancelAnimationFrame(MR.rafId);
+        if(flightRaf) cancelAnimationFrame(flightRaf);
+        window.removeEventListener('keydown', onSpace);
+      };
     }
   });
 

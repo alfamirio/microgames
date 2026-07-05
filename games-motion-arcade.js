@@ -5,6 +5,31 @@
 
   // MOTION / ARCADE -- grid-based retro-arcade riffs
 
+  // Classic circle-with-a-wedge-missing Pac-Man shape, done as a single
+  // div: border-radius:50% makes the box a circle, and clip-path carves
+  // a triangular mouth out of its right side (the polygon traces the full
+  // box but cuts in to the center between two points on the right edge —
+  // intersected with the circular border-radius, that notch reads as a
+  // mouth rather than a square bite). Facing defaults to right (0deg);
+  // pass a dr/dc move direction to rotate the mouth to face it, same
+  // convention as the grid's row/col deltas used elsewhere (dc=1 right,
+  // dr=1 down, dc=-1 left, dr=-1 up).
+  function makePacman(size, color, glowColor){
+    return MR.makeEl('', {
+      position: 'absolute', width: size+'px', height: size+'px', borderRadius: '50%',
+      background: color, boxShadow: '0 0 10px ' + (glowColor || color),
+      clipPath: 'polygon(100% 74%, 44% 48%, 100% 21%, 100% 0%, 0% 0%, 0% 100%, 100% 100%)',
+      transition: 'left 90ms ease, top 90ms ease, transform 90ms ease'
+    });
+  }
+  function pacmanFacing(dr, dc){
+    if(dc===1) return 0;
+    if(dr===1) return 90;
+    if(dc===-1) return 180;
+    if(dr===-1) return 270;
+    return 0;
+  }
+
   MR.games.push({
     label: 'BULLET HELL',
     desc: 'Bullet hell — steer the dot away from everything onscreen. Arrow keys for free movement, or drag it directly with mouse/finger.',
@@ -165,7 +190,7 @@
     word: 'REACH THE FLAG',
     timeLimit: s => 5000/s,
     start(ctx){
-      const COLS = 6, ROWS = 6;
+      const COLS = 7, ROWS = 7;
       const GAP = 6;
 
       // a = start, b = target — same wallDensity/BFS-retry guarantee this
@@ -219,12 +244,105 @@
 
 
   MR.games.push({
+    label: 'FOG MAZE',
+    desc: 'The same kind of maze as ESCAPE, but the lights are out — only cells near you are lit. Feel your way to the flag before time runs out.',
+    word: 'FIND THE WAY',
+    timeLimit: s => 7000/s,
+    start(ctx){
+      const COLS = 7, ROWS = 7;
+      const GAP = 5;
+      const RADIUS = 1; // Chebyshev radius kept lit around the player
+
+      // exact same layout generator as ESCAPE — only the rendering differs
+      const { a: start, b: target, walls } = MR.generateSolvableLayout(COLS, ROWS, { wallDensity: 0.24 });
+      let pr = start.r, pc = start.c;
+      let alive = true;
+
+      const grid = MR.makeCellGrid(COLS, ROWS, { gap: GAP, onCellClick: (r,c)=> tryMoveTo(r,c) });
+      const { wrap, cellW, cellH } = grid;
+
+      grid.cells.forEach(cd=>{
+        if(walls.has(grid.key(cd.r,cd.c))){
+          cd.el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+        } else {
+          cd.el.style.cursor = 'pointer';
+        }
+      });
+
+      const flag = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellH*0.5)+'px', borderRadius: '6px', background: 'var(--flash)', boxShadow: '0 0 10px var(--flash)' });
+      wrap.appendChild(flag);
+      grid.placeCenter(flag, target.r, target.c);
+
+      const player = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellW*0.5)+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', transition: 'left 90ms ease, top 90ms ease' });
+      wrap.appendChild(player);
+      grid.placeCenter(player, pr, pc);
+
+      // one opaque fog tile per cell, stacked above the maze/flag/player —
+      // three states driven purely by opacity + transition so revealing a
+      // cell (or letting it fade back into memory) is just a style flip,
+      // no DOM churn: unseen (solid black, hides whether it's wall/floor),
+      // remembered (dim — you've been near it before but aren't now), and
+      // lit (fully clear, inside the current radius)
+      const fogEls = grid.cells.map(cd=>{
+        const el = MR.makeEl('', {
+          position: 'absolute', width: cellW+'px', height: cellH+'px',
+          left: (cd.c*(cellW+GAP))+'px', top: (cd.r*(cellH+GAP))+'px',
+          background: 'var(--bg)', opacity: '1', pointerEvents: 'none',
+          transition: 'opacity 220ms ease'
+        });
+        wrap.appendChild(el);
+        return el;
+      });
+
+      const seen = new Set();
+      function refreshFog(){
+        for(let r=0;r<ROWS;r++){
+          for(let c=0;c<COLS;c++){
+            const k = grid.key(r,c);
+            const inRadius = Math.max(Math.abs(r-pr), Math.abs(c-pc)) <= RADIUS;
+            if(inRadius) seen.add(k);
+            fogEls[k].style.opacity = inRadius ? '0' : (seen.has(k) ? '0.78' : '1');
+          }
+        }
+      }
+      refreshFog();
+
+      function tryMoveTo(r,c){
+        if(!alive) return;
+        if(r<0||r>=ROWS||c>=COLS||c<0) return;
+        // fog hides whether a cell is a wall until it's been seen, but
+        // that's fine here — walking blind into an unseen wall is exactly
+        // the risk this mode is built around, and tryMoveTo already
+        // blocks the step the instant we know it's blocked
+        if(walls.has(grid.key(r,c))) return;
+        if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
+        pr = r; pc = c;
+        grid.placeCenter(player, pr, pc);
+        refreshFog();
+        if(pr===target.r && pc===target.c){
+          alive = false;
+          ctx.onWin();
+        }
+      }
+      function move(dr,dc){ tryMoveTo(pr+dr, pc+dc); }
+
+      MR.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft') move(0,-1);
+        if(e.key==='ArrowRight') move(0,1);
+        if(e.key==='ArrowUp') move(-1,0);
+        if(e.key==='ArrowDown') move(1,0);
+      });
+    }
+  });
+
+
+  MR.games.push({
     label: 'MAZE-MUNCH',
     desc: 'Pac-style chase — steer the muncher through the maze, gobble every dot, and stay out of the ghost\'s reach. Arrow keys or tap an adjacent open cell to move.',
     word: 'CHOMP!',
     timeLimit: s => 8000/s,
     start(ctx){
-      const COLS = 6, ROWS = 6;
+      const COLS = 7, ROWS = 7  ;
       const GAP = 5;
 
       // a = start, b = ghostStart — same solvability guarantee as ESCAPE
@@ -240,6 +358,7 @@
         if(r<0||r>=ROWS||c<0||c>=COLS) return;
         if(walls.has(grid.key(r,c))) return;
         if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
+        player.style.transform = 'rotate(' + pacmanFacing(r-pr, c-pc) + 'deg)';
         pr = r; pc = c;
         grid.placeCenter(player, pr, pc);
         eatDotAt(pr,pc);
@@ -278,7 +397,7 @@
       });
       let dotsRemaining = dots.size;
 
-      const player = MR.makeEl('', { position: 'absolute', width: (cellW*0.55)+'px', height: (cellH*0.55)+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', transition: 'left 90ms ease, top 90ms ease' });
+      const player = makePacman(cellW*0.55, 'var(--go)');
       wrap.appendChild(player);
       grid.placeCenter(player, pr, pc);
 
@@ -329,6 +448,246 @@
       ctx.onCleanup = ()=>{ alive=false; clearInterval(ghostTimer); };
       // clearing the board before the ghost catches you = win; timing out
       // with dots still up (or getting caught) both fall through to a loss
+    }
+  });
+
+
+  MR.games.push({
+    label: 'REVERSE MUNCH',
+    desc: 'MAZE-MUNCH in reverse — you\'re the ghost now. Corner the fleeing dot before time runs out. Arrow keys or tap an adjacent open cell to move.',
+    word: 'GET IT!',
+    timeLimit: s => 9000/s,
+    start(ctx){
+      const COLS = 7, ROWS = 7;
+      const GAP = 5;
+
+      // same solvable start/prey placement as MAZE-MUNCH's start/ghostStart
+      const { a: start, b: preyStart, walls } = MR.generateSolvableLayout(COLS, ROWS, { wallDensity: 0.2 });
+      let pr = start.r, pc = start.c;
+      let dr = preyStart.r, dc = preyStart.c;
+      let alive = true;
+
+      function tryMoveTo(r,c){
+        if(!alive) return;
+        if(r<0||r>=ROWS||c<0||c>=COLS) return;
+        if(walls.has(grid.key(r,c))) return;
+        if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
+        pr = r; pc = c;
+        grid.placeCenter(player, pr, pc);
+        checkCollision();
+      }
+      function move(dr_,dc_){ tryMoveTo(pr+dr_, pc+dc_); }
+
+      const grid = MR.makeCellGrid(COLS, ROWS, { gap: GAP, onCellClick: (r,c)=> tryMoveTo(r,c) });
+      const { wrap, cellW, cellH } = grid;
+
+      grid.cells.forEach(cd=>{
+        if(walls.has(grid.key(cd.r,cd.c))){
+          cd.el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+        } else {
+          cd.el.style.cursor = 'pointer';
+        }
+      });
+
+      // you're styled as the ghost this time; the prey gets the old
+      // pac-dot look so the role-swap reads at a glance
+      const player = MR.makeEl('', { position: 'absolute', width: (cellW*0.6)+'px', height: (cellH*0.6)+'px', borderRadius: '50% 50% 10% 10%', background: 'var(--go)', boxShadow: '0 0 10px var(--go)', transition: 'left 90ms ease, top 90ms ease' });
+      wrap.appendChild(player);
+      grid.placeCenter(player, pr, pc);
+
+      const prey = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellH*0.5)+'px', borderRadius: '50%', background: 'var(--life)', boxShadow: '0 0 10px var(--life)', transition: 'left 220ms linear, top 220ms linear' });
+      wrap.appendChild(prey);
+      grid.placeCenter(prey, dr, dc);
+
+      function checkCollision(){
+        if(alive && pr===dr && pc===dc){
+          alive = false;
+          ctx.onWin();
+        }
+      }
+
+      MR.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft') move(0,-1);
+        if(e.key==='ArrowRight') move(0,1);
+        if(e.key==='ArrowUp') move(-1,0);
+        if(e.key==='ArrowDown') move(1,0);
+      });
+
+      // Reuses bfsNextStep exactly as MAZE-MUNCH's ghost does, just aimed
+      // the other way: ask "what step would a pursuer take from here
+      // toward the player", then send the prey to the mirror image of
+      // that cell instead — the same distance-reducing step, flipped
+      // into a distance-increasing one. Falls back to whichever open
+      // neighbor ends up farthest from the player if the mirrored cell
+      // is a wall or off the grid, and — if truly cornered — is forced
+      // to take the pursuit step itself, same as any trapped prey would be.
+      function fleeStep(from, target){
+        const chase = MR.bfsNextStep(COLS, ROWS, walls, from, target);
+        if(chase.r===from.r && chase.c===from.c) return from;
+        const mirror = { r: 2*from.r - chase.r, c: 2*from.c - chase.c };
+        if(mirror.r>=0 && mirror.r<ROWS && mirror.c>=0 && mirror.c<COLS && !walls.has(grid.key(mirror.r,mirror.c))){
+          return mirror;
+        }
+        const neighbors = [[from.r-1,from.c],[from.r+1,from.c],[from.r,from.c-1],[from.r,from.c+1]]
+          .filter(([r,c])=> r>=0&&r<ROWS && c>=0&&c<COLS && !walls.has(grid.key(r,c)));
+        let best = null, bestDist = -1;
+        for(const [r,c] of neighbors){
+          if(r===chase.r && c===chase.c) continue;
+          const d = Math.abs(r-target.r)+Math.abs(c-target.c);
+          if(d>bestDist){ bestDist = d; best = { r, c }; }
+        }
+        return best || chase;
+      }
+
+      // prey re-evaluates and takes one step every tick — interval
+      // shortens with speedMul so later, faster rounds are harder to corner
+      const preyStepMs = Math.max(230, 480/ctx.speedMul);
+      const preyTimer = setInterval(()=>{
+        if(!alive) return;
+        const next = fleeStep({r:dr,c:dc}, {r:pr,c:pc});
+        if(next.r!==dr || next.c!==dc){
+          dr = next.r; dc = next.c;
+          grid.placeCenter(prey, dr, dc);
+        }
+        checkCollision();
+      }, preyStepMs);
+
+      ctx.onCleanup = ()=>{ alive=false; clearInterval(preyTimer); };
+      // catching the prey before the buzzer = win; timing out = loss
+    }
+  });
+
+
+  MR.games.push({
+    label: 'DOUBLE TROUBLE',
+    desc: 'MAZE-MUNCH and REVERSE MUNCH at once — a ghost hunts you while a dot flees from you. Corner the dot before the ghost corners you.',
+    word: 'DOUBLE TROUBLE!',
+    timeLimit: s => 7000/s,
+    start(ctx){
+      const COLS = 7, ROWS = 7;
+      const GAP = 5;
+
+      // same generator as MAZE-MUNCH gives us player-start + ghost-start
+      // (and the walls) with the usual solvability guarantee between them
+      const { a: start, b: ghostStart, walls } = MR.generateSolvableLayout(COLS, ROWS, { wallDensity: 0.18 });
+      let pr = start.r, pc = start.c;
+      let gr = ghostStart.r, gc = ghostStart.c;
+
+      // third point — the fleeing dot — just needs to be some open cell
+      // reachable from the player's start that isn't already the ghost's
+      // or the player's; reuses bfsReachable rather than a new generator,
+      // and falls back to any open cell if nothing better turns up
+      function pickPreyStart(){
+        let fallback = null;
+        for(let i=0;i<40;i++){
+          const r = Math.floor(MR.rand(0,ROWS)), c = Math.floor(MR.rand(0,COLS));
+          if(walls.has(r*COLS+c)) continue;
+          if((r===start.r&&c===start.c) || (r===ghostStart.r&&c===ghostStart.c)) continue;
+          if(!fallback) fallback = { r, c };
+          if(MR.bfsReachable(COLS, ROWS, walls, start, { r, c })) return { r, c };
+        }
+        return fallback || { r: start.r, c: start.c };
+      }
+      const preyStart = pickPreyStart();
+      let dr = preyStart.r, dc = preyStart.c;
+      let alive = true;
+
+      function tryMoveTo(r,c){
+        if(!alive) return;
+        if(r<0||r>=ROWS||c<0||c>=COLS) return;
+        if(walls.has(grid.key(r,c))) return;
+        if(Math.abs(r-pr)+Math.abs(c-pc) !== 1) return;
+        player.style.transform = 'rotate(' + pacmanFacing(r-pr, c-pc) + 'deg)';
+        pr = r; pc = c;
+        grid.placeCenter(player, pr, pc);
+        checkCollisions();
+      }
+      function move(dr_,dc_){ tryMoveTo(pr+dr_, pc+dc_); }
+
+      const grid = MR.makeCellGrid(COLS, ROWS, { gap: GAP, onCellClick: (r,c)=> tryMoveTo(r,c) });
+      const { wrap, cellW, cellH } = grid;
+
+      grid.cells.forEach(cd=>{
+        if(walls.has(grid.key(cd.r,cd.c))){
+          cd.el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+        } else {
+          cd.el.style.cursor = 'pointer';
+        }
+      });
+
+      const player = makePacman(cellW*0.55, 'var(--go)');
+      wrap.appendChild(player);
+      grid.placeCenter(player, pr, pc);
+
+      const ghost = MR.makeEl('', { position: 'absolute', width: (cellW*0.6)+'px', height: (cellH*0.6)+'px', borderRadius: '50% 50% 10% 10%', background: 'var(--danger)', boxShadow: '0 0 10px var(--danger)', transition: 'left 240ms linear, top 240ms linear' });
+      wrap.appendChild(ghost);
+      grid.placeCenter(ghost, gr, gc);
+
+      const prey = MR.makeEl('', { position: 'absolute', width: (cellW*0.5)+'px', height: (cellH*0.5)+'px', borderRadius: '50%', background: 'var(--flash)', boxShadow: '0 0 10px var(--flash)', transition: 'left 220ms linear, top 220ms linear' });
+      wrap.appendChild(prey);
+      grid.placeCenter(prey, dr, dc);
+
+      function checkCollisions(){
+        if(!alive) return;
+        if(pr===gr && pc===gc){ alive = false; ctx.onLose(); return; }
+        if(pr===dr && pc===dc){ alive = false; ctx.onWin(); return; }
+      }
+
+      MR.setKeyHandler((e)=>{
+        if(e.key==='ArrowLeft') move(0,-1);
+        if(e.key==='ArrowRight') move(0,1);
+        if(e.key==='ArrowUp') move(-1,0);
+        if(e.key==='ArrowDown') move(1,0);
+      });
+
+      // REVERSE MUNCH's evasion trick, unchanged: ask bfsNextStep what a
+      // pursuer would do from here, then send the prey to the mirror of
+      // that cell instead — turns the same distance-reducing step into a
+      // distance-increasing one, with a farthest-neighbor fallback and a
+      // forced pursuit-step if genuinely cornered
+      function fleeStep(from, target){
+        const chase = MR.bfsNextStep(COLS, ROWS, walls, from, target);
+        if(chase.r===from.r && chase.c===from.c) return from;
+        const mirror = { r: 2*from.r - chase.r, c: 2*from.c - chase.c };
+        if(mirror.r>=0 && mirror.r<ROWS && mirror.c>=0 && mirror.c<COLS && !walls.has(grid.key(mirror.r,mirror.c))){
+          return mirror;
+        }
+        const neighbors = [[from.r-1,from.c],[from.r+1,from.c],[from.r,from.c-1],[from.r,from.c+1]]
+          .filter(([r,c])=> r>=0&&r<ROWS && c>=0&&c<COLS && !walls.has(grid.key(r,c)));
+        let best = null, bestDist = -1;
+        for(const [r,c] of neighbors){
+          if(r===chase.r && c===chase.c) continue;
+          const d = Math.abs(r-target.r)+Math.abs(c-target.c);
+          if(d>bestDist){ bestDist = d; best = { r, c }; }
+        }
+        return best || chase;
+      }
+
+      // ghost hunts the player (MAZE-MUNCH's bfsNextStep chase) and the
+      // prey flees the player (REVERSE MUNCH's mirrored fleeStep) on the
+      // same tick — two threats driven by the two functions already
+      // written for the other games, nothing new to write for either AI
+      const stepMs = Math.max(230, 480/ctx.speedMul);
+      const timer = setInterval(()=>{
+        if(!alive) return;
+        const nextGhost = MR.bfsNextStep(COLS, ROWS, walls, {r:gr,c:gc}, {r:pr,c:pc});
+        if(nextGhost.r!==gr || nextGhost.c!==gc){
+          gr = nextGhost.r; gc = nextGhost.c;
+          grid.placeCenter(ghost, gr, gc);
+        }
+        checkCollisions();
+        if(!alive) return;
+        const nextPrey = fleeStep({r:dr,c:dc}, {r:pr,c:pc});
+        if(nextPrey.r!==dr || nextPrey.c!==dc){
+          dr = nextPrey.r; dc = nextPrey.c;
+          grid.placeCenter(prey, dr, dc);
+        }
+        checkCollisions();
+      }, stepMs);
+
+      ctx.onCleanup = ()=>{ alive=false; clearInterval(timer); };
+      // catching the prey before the ghost catches you (or the buzzer)
+      // = win; getting caught, or timing out, is a loss
     }
   });
 
@@ -444,7 +803,7 @@
       }
       MR.stage.addEventListener('pointerdown', onPointerDown);
 
-      const moveEvery = Math.max(300, 260/ctx.speedMul);
+      const moveEvery = Math.max(200, 200/ctx.speedMul);
       let acc = 0;
       let lastT = performance.now();
 
