@@ -222,7 +222,7 @@
     label: 'MAZE-MUNCH',
     desc: 'Pac-style chase — steer the muncher through the maze, gobble every dot, and stay out of the ghost\'s reach. Arrow keys or tap an adjacent open cell to move.',
     word: 'CHOMP!',
-    timeLimit: s => 6800/s,
+    timeLimit: s => 8000/s,
     start(ctx){
       const COLS = 6, ROWS = 6;
       const GAP = 5;

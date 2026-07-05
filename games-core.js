@@ -46,7 +46,7 @@
 
   const MUSIC_KEY = 'microrush_music_enabled';
   let musicEnabled = lsGet(MUSIC_KEY, null);
-  musicEnabled = musicEnabled === null ? true : musicEnabled === '1';
+  musicEnabled = musicEnabled === null ? false : musicEnabled === '1';
 
   let musicOk = true;
   let musicStarted = false;
@@ -174,6 +174,10 @@
   let dailyRun = false;
   let dailyRoundIndex = 0;
   let pinnedLabels = new Set();
+  // Games already played this run get a yellow side-marker in the roster
+  // (see setActiveRoster / the .played CSS rule) so a glance at the panel
+  // shows the full run history, not just whichever game is live right now.
+  let playedLabels = new Set();
 
   let maxLives = activeDiff().lives;
 
@@ -1042,6 +1046,8 @@
     if(currentGame){
       recordResult(currentGame.label, win);
       runHistory.push({ label: currentGame.label, win: win });
+      playedLabels.add(currentGame.label);
+      setActiveRoster(currentGame.label);
     }
     clearStage();
     if(win){
@@ -1094,6 +1100,7 @@
     rosterList.querySelectorAll('li').forEach(li=>{
       li.classList.toggle('active', li.dataset.label === label);
       li.classList.toggle('pinned', pinnedLabels.has(li.dataset.label));
+      li.classList.toggle('played', playedLabels.has(li.dataset.label));
     });
   }
 
@@ -1289,6 +1296,7 @@
     lives = maxLives;
     streak = 0;
     runHistory = [];
+    playedLabels = new Set();
     speedMul = activeDiff().base;
     updateSpeedDisplay();
     renderLives();

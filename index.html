@@ -143,6 +143,21 @@
     #rosterList li.pinned.active{
       box-shadow: 0 0 0 2px var(--go);
     }
+    /* games already played this run — a yellow left edge so the roster
+       reads as a running history at a glance, separate from "active"
+       (filled yellow, currently playing) and "pinned" (green ring) */
+    #rosterList li.played{
+      box-shadow: inset 3px 0 0 0 var(--flash), inset 0 0 0 1px var(--line);
+    }
+    #rosterList li.played.active{
+      box-shadow: inset 3px 0 0 0 var(--flash);
+    }
+    #rosterList li.pinned.played{
+      box-shadow: inset 3px 0 0 0 var(--flash), 0 0 0 2px var(--go);
+    }
+    #rosterList li.pinned.played.active{
+      box-shadow: inset 3px 0 0 0 var(--flash), 0 0 0 2px var(--go);
+    }
     #rosterList li.pinned .roster-label::before{
       content: "\25CF ";
       color:var(--go);
