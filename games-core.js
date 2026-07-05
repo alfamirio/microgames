@@ -140,6 +140,7 @@
   let currentCtx = null;
   let runHistory = [];
   let dailyRun = false;
+  let dailyRoundIndex = 0;
   let pinnedLabels = new Set();
 
   let maxLives = DIFFICULTIES[activeDiffIndex].lives;
@@ -1085,6 +1086,22 @@
     if(!running) return;
     const myToken = roundToken;
     clearStage();
+    // Reseed fresh for every round of a daily run, keyed off the round
+    // index rather than letting one continuous stream run for the whole
+    // run. Some microgames (e.g. RED LIGHT) keep drawing random numbers
+    // for as long as the round lasts in real time, so how quickly a
+    // player wins or loses a round changes how many draws get consumed
+    // before the next one. With a single shared stream that shifts every
+    // later pick out of sync, so the "same" daily seed could still hand
+    // out a different game order depending on how someone played the
+    // earlier rounds. Reseeding per round makes each round's game pick
+    // (and its internal setup) depend only on the date and round number,
+    // so the sequence is identical for everyone no matter how any round
+    // actually played out.
+    if(dailyRun){
+      Math.random = mulberry32(seedFromString('microrush-' + todayKey() + '-round' + dailyRoundIndex));
+      dailyRoundIndex++;
+    }
     const usePinned = pinnedLabels.size > 0 && !dailyRun;
     const pool = usePinned ? games.filter(g=>pinnedLabels.has(g.label)) : games;
     const game = pickUniformByCategory(pool);
@@ -1123,10 +1140,15 @@
   // ---------- DAILY SEED ----------
   // Overriding Math.random for the duration of a daily run is deliberate:
   // every pick()/rand() call and every ad-hoc Math.random() inside the
-  // individual microgames all route through it, so the whole run — which
-  // games appear, in what order, and every randomized detail inside them —
-  // becomes fully deterministic from the date alone, with zero changes
-  // needed at each of the ~20 call sites scattered through the games.
+  // individual microgames all route through it, so each round — which
+  // game appears and every randomized detail inside it — becomes fully
+  // deterministic from the date and round number alone, with zero
+  // changes needed at each of the ~20 call sites scattered through the
+  // games. It's reseeded per round (in nextRound(), keyed on date+round
+  // index) rather than once for the whole run, since some microgames
+  // keep consuming random draws for as long as the round lasts in real
+  // time — a single run-long stream would let a player's own timing
+  // shift every later round's pick out of sync with everyone else's.
   const nativeRandom = Math.random;
 
   function mulberry32(seed){
@@ -1219,8 +1241,12 @@
   function startRun(opts){
     opts = opts || {};
     dailyRun = !!opts.daily;
+    dailyRoundIndex = 0;
     activeDiffIndex = diffIndex;
-    Math.random = dailyRun ? mulberry32(seedFromString('microrush-' + todayKey())) : nativeRandom;
+    // nextRound() reseeds per-round for daily runs (see its own comment
+    // there), so this just needs to make sure a non-daily run is on
+    // native random.
+    if(!dailyRun) Math.random = nativeRandom;
     overlay.classList.add('hidden');
     startMusic();
     setScore(0);
