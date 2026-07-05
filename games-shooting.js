@@ -760,11 +760,23 @@
         speed: (t.speed != null ? t.speed : 0.2) * ctx.speedMul,
         movement: t.movement || 'approach',
         stopFrac: t.stopFrac != null ? t.stopFrac : 0.6,
+        // optional: pin every instance of this type to one lane-block
+        // instead of a random one each spawn (e.g. a floor-mounted
+        // turret row). Index is 0-based from the near side of the lane
+        // axis; -1 means the far-side lane-block (the "floor"). Default
+        // null keeps the existing random-lane behavior every other
+        // enemy type already relies on.
+        fixedLane: t.fixedLane != null ? t.fixedLane : null,
         color: t.color || 'var(--danger)',
         ring: t.ring || null,
         icon: t.icon || null,
         maxShooters: t.maxShooters != null ? t.maxShooters : Infinity,
         shooterScope: t.shooterScope || 'perInstance',
+        // aimed: fires a straight-line shot toward the player's current
+        // position instead of a lane-locked shot straight along the
+        // approach axis. Default false keeps every existing enemy's
+        // straight-shot behavior unchanged.
+        aimed: t.aimed === true,
         fireDelay: t.fireDelay || [500, 900],
         fireCooldown: t.fireCooldown || [900, 1900],
         countsTowardWin: t.countsTowardWin !== false,
@@ -853,10 +865,18 @@
     function spawnEnemyOfType(type){
       const acrossSize = Math.max(10, type.lanes * laneSize - 10);
       const alongSize = type.size;
-      // pick a random valid block of `lanes` contiguous lanes and center
-      // the enemy within it
+      // pick a valid block of `lanes` contiguous lanes and center the
+      // enemy within it — a fixedLane type always uses the same
+      // lane-block (e.g. a floor-mounted turret row); everything else
+      // picks a fresh random block each spawn, same as before.
       const maxStartLane = LANE_COUNT - type.lanes;
-      const startLane = Math.floor(Math.random() * (maxStartLane + 1));
+      let startLane;
+      if(type.fixedLane != null){
+        startLane = type.fixedLane < 0 ? maxStartLane + type.fixedLane + 1 : type.fixedLane;
+        startLane = Math.max(0, Math.min(maxStartLane, startLane));
+      } else {
+        startLane = Math.floor(Math.random() * (maxStartLane + 1));
+      }
       const across = startLane * laneSize + (type.lanes * laneSize - acrossSize) / 2;
 
       let along, phase, level, dir;
@@ -890,14 +910,36 @@
       // a sweeping/descending enemy aims from the level it's currently on;
       // everything else aims from wherever it currently sits along-axis
       const along = (vertical && type.movement === 'sweepDescend') ? levelCenter(en.level) - BW_ALONG / 2 : en.along;
-      // aim from whichever lane the enemy's current center sits over —
-      // works the same whether it's locked to one lane or spans several
-      const nearestLane = Math.max(0, Math.min(LANE_COUNT - 1, Math.floor((en.across + en.acrossSize / 2) / laneSize)));
-      const across = laneCenter(nearestLane) - BW_ACROSS / 2;
+      let across;
+      if(type.aimed){
+        // an aimed shot doesn't need to line up with a lane center — it
+        // just leaves from wherever the enemy's own body currently is
+        across = en.across + en.acrossSize / 2 - BW_ACROSS / 2;
+      } else {
+        // aim from whichever lane the enemy's current center sits over —
+        // works the same whether it's locked to one lane or spans several
+        const nearestLane = Math.max(0, Math.min(LANE_COUNT - 1, Math.floor((en.across + en.acrossSize / 2) / laneSize)));
+        across = laneCenter(nearestLane) - BW_ACROSS / 2;
+      }
       const el = MR.makeEl('box', Object.assign({ background: 'var(--danger)' }, sizeStyle(BW_ALONG, BW_ACROSS)));
       setPos(el, along, across);
       wrap.appendChild(el);
-      enemyBullets.push({ el, along, across, alongSize: BW_ALONG, acrossSize: BW_ACROSS, owner: en, ownerType: type });
+      const bullet = { el, along, across, alongSize: BW_ALONG, acrossSize: BW_ACROSS, owner: en, ownerType: type };
+      if(type.aimed){
+        // a straight-line shot toward wherever the player is *right now*
+        // — angle is fixed at the moment of firing, not a homing missile,
+        // so switching lanes right after the shot leaves is still a
+        // clean dodge. velAlong/velAcross replace the plain along-only
+        // drift every other bullet uses.
+        const targetAlong = nearAlong + shipAlong / 2;
+        const targetAcross = playerAcross() + shipAcross / 2;
+        const dAlong = targetAlong - (along + BW_ALONG / 2);
+        const dAcross = targetAcross - (across + BW_ACROSS / 2);
+        const dist = Math.hypot(dAlong, dAcross) || 1;
+        bullet.velAlong = (dAlong / dist) * enemyBulletSpeed;
+        bullet.velAcross = (dAcross / dist) * enemyBulletSpeed;
+      }
+      enemyBullets.push(bullet);
     }
 
     // enemy bullets travel at a flat speed regardless of movement pattern
@@ -992,9 +1034,12 @@
 
       for(let i = enemyBullets.length - 1; i >= 0; i--){
         const b = enemyBullets[i];
-        b.along += approachDir * enemyBulletSpeed * dt;
+        if(b.velAlong != null){ b.along += b.velAlong * dt; b.across += b.velAcross * dt; }
+        else b.along += approachDir * enemyBulletSpeed * dt;
         setPos(b.el, b.along, b.across);
-        if(approachDir > 0 ? b.along > travelSpan + 20 : b.along < -20){ removeEnemyBullet(b); continue; }
+        const outAlong = approachDir > 0 ? b.along > travelSpan + 20 : b.along < -20;
+        const outAcross = b.across + b.acrossSize < -20 || b.across > laneSpan + 20;
+        if(outAlong || outAcross){ removeEnemyBullet(b); continue; }
         if(overlap(b, pRect)){ alive = false; ctx.onLose(); return; } // hit by enemy fire
       }
 
@@ -1138,6 +1183,58 @@
             id: 'MINIBOSS', hp: 1, lanes: 1, speed: 0.20, movement: 'approach',
             color: 'var(--life)', icon: 'invader', maxShooters: 1, shooterScope: 'sharedType', countsTowardWin: false,
             spawn: { every: 3200, firstDelay: 2200, concurrent: 1 }
+          }
+        ]
+      });
+    }
+  });
+
+
+  MR.games.push({
+    label: 'TURRET SIEGE',
+    // Horizontal like SHMUP (ship slides up/down the 7 lanes, fires
+    // right) rather than INVADERS' vertical layout. Two enemy types
+    // share the wave: a floor-mounted TURRET, pinned via fixedLane to
+    // the far lane-block instead of a random one each spawn, so it
+    // always reads as a fixed ground emplacement rather than just
+    // another flying grunt — and it fires 'aimed' shots angled straight
+    // at wherever the ship currently sits, rather than the lane-locked
+    // shots every other enemy in this file fires. Alongside it is
+    // SHMUP's own Enemy A, copied verbatim (same id/stats/spawn), so
+    // the two games share a common grunt wave and only differ by the
+    // turret line layered on top. Survival like SHMUP/INVADERS, not
+    // BOSS RUN: outlasting the clock is itself a win, on top of the
+    // early-win kill target.
+    desc: 'Mini side-scrolling siege: move your ship across the 7 lanes with the up/down arrows (or tap the top/bottom of the screen), and fire with space or by tapping the ship itself. A row of floor-mounted turrets holds the far lane and fires back \u2014 they take 2 hits each, and aim their shots straight at wherever you are the instant they fire, so switching lanes right after is a clean dodge. Regular grunts fly straight in from the same side. Every 3 shots you burn through a reload \u2014 line up shots carefully instead of spraying. Reach 10 kills or survive to the buzzer to win.',
+    word: 'SIEGE!',
+    // fixed 8s round regardless of speedMul, matching SHMUP/INVADERS —
+    // difficulty comes from speed/spawn scaling, not squeezing the clock.
+    timeLimit: s => 8000,
+    start(ctx){
+      buildAxisShooter(ctx, {
+        vertical: false, laneCount: 7, needed: 10, magSize: 3, reloadMs: 500, bulletSpeed: 0.60,
+        hudLabel: 'TURRET SIEGE',
+        enemies: [
+          { // Turret — floor-mounted: fixedLane: -1 locks it to the far
+            // lane-block every spawn instead of a random one, so only
+            // one can usefully be alive at a time (concurrent: 1) and
+            // it reads as a defended lane rather than a roaming enemy.
+            // Takes 2 hits. aimed: true means its shots travel in a
+            // straight line toward wherever the ship is *at the moment
+            // of firing* instead of staying locked to the turret's own
+            // lane — the angle is fixed at that instant, not homing, so
+            // a lane switch right after the shot leaves still dodges it.
+            id: 'TURRET', hp: 2, lanes: 1, movement: 'static', stopFrac: 0.6, fixedLane: -1,
+            color: 'var(--danger)', ring: 'var(--flash)', maxShooters: 1, aimed: true,
+            spawn: { concurrent: 1, every: 1400, minEvery: 900 }
+          },
+          { // Enemy A — SHMUP's standard grunt, unchanged: 1 lane, dies
+            // in 1 hit, flies straight in. Shares the 'invader' icon
+            // with SHMUP/INVADERS/BOSS RUN so it reads as the same
+            // familiar threat here too.
+            id: 'A', hp: 1, lanes: 1, speed: 0.20, movement: 'approach',
+            icon: 'invader', maxShooters: 1, shooterScope: 'sharedType',
+            spawn: { concurrent: 6, every: 600, minEvery: 380 }
           }
         ]
       });

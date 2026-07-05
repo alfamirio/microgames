@@ -337,6 +337,124 @@
   });
 
 
+  MR.games.push({
+    label: 'RUN',
+    desc: 'Tap in time with the heartbeat to sprint — mistime a tap and you\u2019ll lose ground.',
+    word: 'FEEL THE BEAT',
+    timeLimit: s => 5400/s,
+    start(ctx){
+      const RIVAL_RATE = 18;  // % of track per second, at speedMul 1 -- slower rival
+      const PLAYER_STEP = 11; // % of track gained per good beat
+      // faster speedMul tightens the rhythm, but floored so the window
+      // never shrinks to something un-hittable by hand
+      const BEAT_PERIOD = 950 / ctx.speedMul;   // ms per heartbeat cycle -- slower beat
+      // green (hittable) window should last 10x as long as red each cycle:
+      // green covers 2*HIT_WINDOW of the period, red covers the rest, so
+      // 2*HIT_WINDOW / (BEAT_PERIOD - 2*HIT_WINDOW) = 10  =>  HIT_WINDOW = (10/22) * BEAT_PERIOD
+      const HIT_WINDOW = BEAT_PERIOD * (10/22);
+      let playerPos = 0, rivalPos = 0, alive = true, lastT = performance.now();
+      const startTime = lastT;
+
+      const wrap = MR.makeEl('', { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '22px', width: '100%' });
+
+      function makeLane(color){
+        const lane = MR.makeEl('', { position: 'relative', width: '100%', height: '40px', background: 'rgba(255,255,255,0.06)', borderRadius: '10px', overflow: 'hidden' });
+        const runner = MR.makeEl('', { position: 'absolute', top: '50%', left: '0%', width: '28px', height: '28px', borderRadius: '50%', background: color, transform: 'translateY(-50%)' });
+        lane.appendChild(runner);
+        const flag = MR.makeEl('', { position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' });
+        flag.textContent = '\ud83c\udfc1';
+        lane.appendChild(flag);
+        return { lane, runner };
+      }
+
+      const playerLane = makeLane('var(--go)');
+      const rivalLane = makeLane('var(--danger)');
+      wrap.appendChild(playerLane.lane);
+      wrap.appendChild(rivalLane.lane);
+
+      // heartbeat pulse indicator — grows and glows as each beat approaches,
+      // peaking exactly on the beat so the hit window has a visible target
+      const pulse = MR.makeEl('', { width: '54px', height: '54px', borderRadius: '50%', background: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' });
+      pulse.textContent = '\u2764\ufe0f';
+      wrap.appendChild(pulse);
+
+      const btn = MR.makeEl('', { width: '160px', height: '56px', borderRadius: '14px', background: 'var(--flash)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--display)', fontSize: '16px', color: '#0b0b10', fontWeight: '900', userSelect: 'none' });
+      btn.textContent = 'TAP';
+      wrap.appendChild(btn);
+
+      MR.stage.appendChild(wrap);
+
+      function place(){
+        // clamp the visual so the runner circle never pokes out past the
+        // lane's right edge even once pos hits/overshoots 100
+        playerLane.runner.style.left = Math.min(playerPos, 92) + '%';
+        rivalLane.runner.style.left = Math.min(rivalPos, 92) + '%';
+      }
+      place();
+
+      // distance (ms) from a given timestamp to the nearest beat peak
+      function distToBeat(t){
+        const phase = (t - startTime) % BEAT_PERIOD;
+        return Math.min(phase, BEAT_PERIOD - phase);
+      }
+
+      function finish(win){
+        if(!alive) return;
+        alive = false;
+        if(MR.rafId) cancelAnimationFrame(MR.rafId);
+        win ? ctx.onWin() : ctx.onLose();
+      }
+
+      function flashFeedback(color){
+        btn.style.background = color;
+        setTimeout(()=>{ if(alive) btn.style.background = 'var(--flash)'; }, 100);
+      }
+
+      btn.addEventListener('click', ()=>{
+        if(!alive) return;
+        btn.style.transform = 'scale(0.9)';
+        setTimeout(()=>{ btn.style.transform = 'scale(1)'; }, 60);
+        const dist = distToBeat(performance.now());
+        if(dist <= HIT_WINDOW){
+          // on-beat: sprint forward
+          playerPos += PLAYER_STEP;
+          flashFeedback('var(--go)');
+        } else {
+          // off-beat: 1 turn penalty — costs the same ground a good beat
+          // would have gained, so a mistimed tap is worse than no tap
+          playerPos = Math.max(0, playerPos - PLAYER_STEP);
+          flashFeedback('var(--danger)');
+        }
+        place();
+        if(playerPos >= 100) finish(true);
+      });
+
+      function loop(t){
+        if(!alive) return;
+        const dt = (t-lastT)/1000; lastT = t;
+        // rival waits out the first heartbeat before it starts moving
+        if(t - startTime >= BEAT_PERIOD){
+          rivalPos += dt * RIVAL_RATE * ctx.speedMul;
+        }
+        place();
+
+        // pulse grows to full size right on the beat, shrinks between beats
+        const dist = distToBeat(t);
+        const strength = 1 - Math.min(dist / (BEAT_PERIOD/2), 1);
+        const scale = 1 + strength * 0.5;
+        pulse.style.transform = `scale(${scale})`;
+        pulse.style.background = dist <= HIT_WINDOW ? 'var(--go)' : 'var(--danger)';
+
+        if(rivalPos >= 100){ finish(false); return; }
+        MR.rafId = requestAnimationFrame(loop);
+      }
+      MR.rafId = requestAnimationFrame(loop);
+
+      ctx.onCleanup = ()=>{ alive = false; if(MR.rafId) cancelAnimationFrame(MR.rafId); };
+    }
+  });
+
+
   for(let i=CATEGORY_START;i<MR.games.length;i++) MR.games[i].category = 'reflex-tap';
 
 })();

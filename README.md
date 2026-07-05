@@ -54,7 +54,7 @@ games-motion-arcade.js   — top-down arcade/chase games (BULLET HELL, ESCAPE,
                            FOG MAZE, MAZE-MUNCH, REVERSE MUNCH,
                            DOUBLE TROUBLE, SNAKE)
 games-shooting.js        — aim-and-shoot games (QUICKDRAW, ALLEY, RUSH ALLEY,
-                           BIRD HUNT, SKEET, R-TYPE, SPACE INVADERS)
+                           BIRD HUNT, SKEET, SHMUP, INVADERS, BOSS RUN)
 games-memory.js          — memory/observation games (COUNT, MEMORY, ODD FLASH,
                            MATCH, PATTERN, SPOT, POSITION, CARD PEEK)
 games-logic.js           — logic/puzzle games (MATH, SCRAMBLE, ORDER, SORT IT,

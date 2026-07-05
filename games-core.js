@@ -6,7 +6,6 @@
   const stage = $('stage');
   const screen = $('screen');
   const cabinet = $('cabinet');
-  const instructionEl = $('instruction');
   const instructionText = $('instructionText');
   const overlay = $('overlay');
   const timerbar = $('timerbar');
@@ -163,11 +162,10 @@
   let flashTimeout = null;
   let cabinetFlashTimeout = null;
   let keyHandler = null;
-  // Backing store for MR.registerKey/MR.registerHoldKey (see the "SHARED
-  // INPUT HELPERS" block below) — reset every round so stale bindings from
-  // the previous game can't leak into the next one.
+  // Backing store for MR.registerKey (see the "SHARED INPUT HELPERS" block
+  // below) — reset every round so stale bindings from the previous game
+  // can't leak into the next one.
   let keyRegistry = null;
-  let extraKeyListeners = [];
   let currentGame = null;
   let currentCtx = null;
   let runHistory = [];
@@ -212,8 +210,6 @@
     stageLabel.textContent = '';
     if(keyHandler){ window.removeEventListener('keydown', keyHandler); keyHandler = null; }
     keyRegistry = null;
-    extraKeyListeners.forEach(({target,type,fn})=> target.removeEventListener(type, fn));
-    extraKeyListeners = [];
   }
 
   function rand(min,max){ return Math.random()*(max-min)+min; }
@@ -318,32 +314,6 @@
       keyRegistry[key] = handler;
     },
 
-    // Registers a hold shortcut: onStart fires on keydown, onEnd fires on
-    // keyup, mirroring pointerdown/pointerup. Ignores key-repeat autofire
-    // (holding a key sends repeated keydowns) so onStart only fires once
-    // per physical press. Uses its own window listeners (independent of
-    // the registerKey dispatcher above, since it needs the keyup half
-    // too) — tracked in extraKeyListeners so clearStage can tear them down
-    // between rounds same as everything else.
-    registerHoldKey(key, onStart, onEnd){
-      let holding = false;
-      const down = (e)=>{
-        if(!hotkeysEnabled) return;
-        if(e.key !== key || holding) return;
-        holding = true;
-        onStart(e);
-      };
-      const up = (e)=>{
-        if(e.key !== key || !holding) return;
-        holding = false;
-        onEnd(e);
-      };
-      window.addEventListener('keydown', down);
-      window.addEventListener('keyup', up);
-      extraKeyListeners.push({ target: window, type: 'keydown', fn: down });
-      extraKeyListeners.push({ target: window, type: 'keyup', fn: up });
-    },
-
     // Small corner badge showing which key activates `el` (e.g. "1",
     // "→", "Space"). Purely visual — forces el to position:relative first
     // if it doesn't already establish its own positioning context, so the
@@ -378,22 +348,6 @@
       return el;
     },
 
-    // Hold-control version of bindActivate: pointer hold (down/up/leave/
-    // cancel) paired with an optional matching hold-key. onStart/onEnd
-    // receive the triggering event.
-    // opts: { key, showHint (default true), hintLabel (defaults to key) }
-    bindHold(el, onStart, onEnd, opts){
-      opts = opts || {};
-      el.addEventListener('pointerdown', (e)=> onStart(e));
-      el.addEventListener('pointerup', (e)=> onEnd(e));
-      el.addEventListener('pointerleave', (e)=> onEnd(e));
-      el.addEventListener('pointercancel', (e)=> onEnd(e));
-      if(opts.key){
-        this.registerHoldKey(opts.key, onStart, onEnd);
-        if(opts.showHint !== false) this.addKeyHint(el, opts.hintLabel || opts.key);
-      }
-      return el;
-    },
 
     // Convenience for the grid/selection-game shape (ODD ONE, WHACK,
     // MATCH, SPOT, CARD PEEK, buildOptionGrid, etc): binds click + number
@@ -530,31 +484,41 @@
       return { wrap, cellW, cellH, cells, key, placeCenter, placeCell };
     },
 
-    // Shared "two points + scattered walls, retried until provably
-    // solvable" layout generator behind ESCAPE (start/target) and
-    // MAZE-MUNCH (start/ghostStart) — previously duplicated with only
-    // cosmetic renames. Picks two random cells at least minDist apart,
-    // scatters a wall budget around them (never on either point), and
-    // retries the *whole* layout — not just the walls — until
-    // bfsReachable confirms `b` can still reach `a`. Falls back to
-    // opposite corners with no walls if nothing solvable turns up within
-    // `attempts`, so a round can never soft-lock on an unsolvable maze.
-    // opts: { wallDensity (default 0.28), minDist (default
-    //   floor((cols+rows)/2)), attempts (default 40), wallGuard (default
-    //   200, the retry cap for placing individual walls) }
-    generateSolvableLayout(cols, rows, opts){
+    // General "N points + scattered walls, retried until every point can
+    // reach every other one" layout generator.
+    //
+    // Picks `pointCount` random cells each at least minDist from every
+    // other chosen point, scatters a wall budget around them (never on a
+    // point), and retries the *whole* layout — not just the walls —
+    // until bfsReachable confirms every point can reach points[0]. Falls
+    // back to an evenly-spread, wall-free layout if nothing solvable
+    // turns up within `attempts`, so a round can never soft-lock on an
+    // unsolvable maze.
+    // opts: { pointCount (default 2), wallDensity (default 0.28),
+    //   minDist (default floor((cols+rows)/pointCount)), attempts
+    //   (default 40), wallGuard (default 200, the retry cap for both
+    //   placing points far enough apart and placing individual walls) }
+    // returns { points: [{r,c}, ...], walls }
+    generateLayoutWithPoints(cols, rows, opts){
       opts = opts || {};
+      const pointCount = opts.pointCount !== undefined ? opts.pointCount : 2;
       const wallDensity = opts.wallDensity !== undefined ? opts.wallDensity : 0.28;
-      const minDist = opts.minDist !== undefined ? opts.minDist : Math.floor((cols+rows)/2);
+      const minDist = opts.minDist !== undefined ? opts.minDist : Math.floor((cols+rows)/pointCount);
       const attempts = opts.attempts !== undefined ? opts.attempts : 40;
       const wallGuard = opts.wallGuard !== undefined ? opts.wallGuard : 200;
       const key = (r,c)=> r*cols+c;
+      const farEnough = (points, cand)=> points.every(p=> Math.abs(p.r-cand.r)+Math.abs(p.c-cand.c) >= minDist);
 
       for(let attempt=0; attempt<attempts; attempt++){
-        const a = { r: Math.floor(this.rand(0,rows)), c: Math.floor(this.rand(0,cols)) };
-        const b = { r: Math.floor(this.rand(0,rows)), c: Math.floor(this.rand(0,cols)) };
-        const dist = Math.abs(a.r-b.r) + Math.abs(a.c-b.c);
-        if(dist < minDist) continue;
+        const points = [];
+        let placeGuard = 0;
+        while(points.length < pointCount && placeGuard < wallGuard){
+          placeGuard++;
+          const cand = { r: Math.floor(this.rand(0,rows)), c: Math.floor(this.rand(0,cols)) };
+          if(points.length === 0 || farEnough(points, cand)) points.push(cand);
+        }
+        if(points.length < pointCount) continue; // couldn't fit them far enough apart — retry the whole layout
+
         const walls = new Set();
         const wallBudget = Math.floor(cols*rows*wallDensity);
         let guard = 0;
@@ -562,12 +526,21 @@
           guard++;
           const r = Math.floor(this.rand(0,rows)), c = Math.floor(this.rand(0,cols));
           const k = key(r,c);
-          if((r===a.r&&c===a.c) || (r===b.r&&c===b.c)) continue;
+          if(points.some(p=> p.r===r && p.c===c)) continue;
           walls.add(k);
         }
-        if(this.bfsReachable(cols, rows, walls, a, b)) return { a, b, walls };
+        const allReachable = points.every((p,i)=> i===0 || this.bfsReachable(cols, rows, walls, points[0], p));
+        if(allReachable) return { points, walls };
       }
-      return { a:{r:0,c:0}, b:{r:rows-1,c:cols-1}, walls:new Set() };
+      // fallback: spread points evenly along the top/bottom rows, no walls
+      const fallbackPoints = [];
+      for(let i=0;i<pointCount;i++){
+        fallbackPoints.push({
+          r: i%2===0 ? 0 : rows-1,
+          c: pointCount>1 ? Math.round(i*(cols-1)/(pointCount-1)) : 0
+        });
+      }
+      return { points: fallbackPoints, walls: new Set() };
     },
 
     // Breadth-first search over a COLSxROWS grid of cells, treating `walls`
@@ -614,6 +587,269 @@
         }
       }
       return from;
+    },
+
+    // ---------- GENERIC GRID ENTITY SYSTEM ----------
+    // Generalizes the player/target/hazard/enemy/collectible plumbing that
+    // ESCAPE, FOG MAZE, MAZE-MUNCH, and REVERSE MUNCH each hand-rolled with
+    // only cosmetic differences: a moving player div, one or more other
+    // sprites, a checkCollision() function, a win/lose call. A caller
+    // describes *what's on the grid* — types, counts, movement behavior,
+    // look — and this owns the DOM, movement rules, per-frame updates, and
+    // contact resolution for all of it. The caller still owns the round
+    // itself (ctx.onWin/onLose, the countdown timer) and just wires this
+    // controller's callbacks into those.
+    //
+    // opts:
+    //   gap, margin         -> forwarded to makeCellGrid
+    //   walls                  Set of blocked cell keys (r*cols+c), e.g.
+    //                           from generateLayoutWithPoints
+    //   onWin(), onLose()      called when a type with onContact:'win' or
+    //                           'lose' touches the player
+    //   onAllCollected(name)   called once every entity of a 'collect'
+    //                           type (by that type's name) has been picked up
+    //   types: {
+    //     <name>: {
+    //       count,                // how many to place (ignored if `at` given)
+    //       at: [{r,c}, ...],     // explicit starting cells
+    //       isPlayer: true,       // exactly one type should set this
+    //       static: true|false,   // false = moves under `behavior`
+    //       behavior: 'input' | 'patrol' | 'chase' | 'pulse',
+    //         // input:  arrow keys / adjacent-cell clicks move it (the player)
+    //         // patrol: steps around `waypoints` on repeat, `stepMs` per hop
+    //         //         — a fixed closed loop, not pathfinding
+    //         // chase:  BFS-repaths toward the player every `stepMs`
+    //         // pulse:  toggles safe/unsafe on `pulsePeriod`/`pulseUnsafe`,
+    //         //         each instance phase-offset at random so a group
+    //         //         doesn't flare in sync
+    //       waypoints, stepMs, pulsePeriod, pulseUnsafe,
+    //       onContact: 'win' | 'lose' | 'collect' | fn(entity),
+    //       onMove(entity, dr, dc),  // optional per-step visual hook (e.g.
+    //                                // rotating a pacman sprite to face dr/dc)
+    //       render: {
+    //         shape: 'circle'|'square'|'diamond', color, size (fraction of
+    //           a cell, default 0.5), glow (default true), transition,
+    //         fillCell: true,   // covers the whole cell (hazards like fire);
+    //                           // pinned to its starting cell — don't combine
+    //                           // with a moving behavior
+    //         inCell: true,     // small icon centered inside its cell
+    //                           // (collectibles like dots); same pin caveat
+    //         makeEl(cellW,cellH): el, // full custom element instead of the above
+    //         styles: {}        // extra inline styles merged in last
+    //       }
+    //     }
+    //   }
+    //
+    // Returns { grid, entities, move(dr,dc), tryMoveTo(r,c), destroy() }.
+    // entities[name] is the live array of { r, c, el, def } records for
+    // that type — 'collect' entities are spliced out as they're picked up.
+    makeEntityGrid(cols, rows, opts){
+      opts = opts || {};
+      const self = this;
+      const walls = opts.walls || new Set();
+      const types = opts.types || {};
+
+      const grid = this.makeCellGrid(cols, rows, {
+        gap: opts.gap, margin: opts.margin,
+        onCellClick: (r,c)=> controller.tryMoveTo(r,c)
+      });
+      const { wrap, cellW, cellH, key } = grid;
+
+      grid.cells.forEach(cd=>{
+        if(walls.has(key(cd.r,cd.c))){
+          cd.el.style.background = 'repeating-linear-gradient(45deg, var(--bezel), var(--bezel) 6px, rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.35) 12px)';
+        } else {
+          cd.el.style.cursor = 'pointer';
+        }
+      });
+
+      function makeEntityEl(def){
+        const r = def.render || {};
+        if(r.makeEl) return r.makeEl(cellW, cellH);
+        const color = r.color || 'var(--go)';
+        const glow = r.glow !== false;
+        if(r.fillCell){
+          return self.makeEl('', Object.assign({
+            position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
+            borderRadius: r.shape==='circle' ? '50%' : '4px',
+            background: color, pointerEvents: 'none', opacity: '0',
+            boxShadow: '0 0 0px ' + color,
+            transition: 'opacity 150ms ease, box-shadow 150ms ease'
+          }, r.styles || {}));
+        }
+        if(r.inCell){
+          const size = r.size !== undefined ? r.size : 0.24;
+          return self.makeEl('', Object.assign({
+            position: 'absolute', left: '50%', top: '50%',
+            width: (size*100)+'%', height: (size*100)+'%',
+            transform: 'translate(-50%,-50%)',
+            borderRadius: r.shape==='square' ? '4px' : '50%',
+            background: color, pointerEvents: 'none',
+            boxShadow: glow ? ('0 0 6px ' + color) : 'none'
+          }, r.styles || {}));
+        }
+        const size = r.size !== undefined ? r.size : 0.5;
+        const style = {
+          position: 'absolute',
+          width: (cellW*size)+'px', height: (cellH*size)+'px',
+          background: color,
+          transition: r.transition !== undefined ? r.transition : 'left 90ms ease, top 90ms ease'
+        };
+        style.borderRadius = r.shape==='square' ? '6px' : '50%';
+        if(r.shape==='diamond') style.transform = 'rotate(45deg)';
+        if(glow) style.boxShadow = '0 0 10px ' + color;
+        return self.makeEl('', Object.assign(style, r.styles || {}));
+      }
+
+      const openCells = grid.cells.filter(cd=> !walls.has(key(cd.r,cd.c)));
+      const claimed = new Set();
+      const entities = {};
+      let playerName = null;
+      const createdAt = performance.now(); // so chase/patrol's first hop waits a full stepMs, same as the old setInterval-based version
+
+      // Insertion order matters: types placed earlier (e.g. player,
+      // target) claim their `at` cells first, so a later count-based type
+      // (e.g. scattered hazards/pickups) never lands on top of them.
+      Object.keys(types).forEach(name=>{
+        const def = types[name];
+        if(def.isPlayer) playerName = name;
+        let cellsForType;
+        if(def.at && def.at.length){
+          cellsForType = def.at;
+        } else {
+          const candidates = self.shuffle(openCells.filter(cd=> !claimed.has(key(cd.r,cd.c))));
+          cellsForType = candidates.slice(0, def.count || 0).map(cd=> ({ r: cd.r, c: cd.c }));
+        }
+        entities[name] = cellsForType.map(p=>{
+          claimed.add(key(p.r, p.c));
+          const el = makeEntityEl(def);
+          const pinned = !!(def.render && (def.render.fillCell || def.render.inCell));
+          if(pinned){ grid.cells[key(p.r,p.c)].el.appendChild(el); }
+          else { wrap.appendChild(el); grid.placeCenter(el, p.r, p.c); }
+          return { r: p.r, c: p.c, el, def, pinned, phase: self.rand(0, def.pulsePeriod || 1000), waypointIndex: 0, lastStepAt: createdAt };
+        });
+      });
+
+      const remaining = {};
+      Object.keys(entities).forEach(name=>{
+        if(types[name].onContact === 'collect') remaining[name] = entities[name].length;
+      });
+
+      let alive = true;
+
+      function moveEntityTo(e, r, c){
+        e.r = r; e.c = c;
+        if(e.pinned) return; // fillCell/inCell entities stay put on their starting cell
+        grid.placeCenter(e.el, r, c);
+      }
+
+      function isPulseUnsafe(def, e, t){
+        const period = def.pulsePeriod || 1800;
+        const unsafe = def.pulseUnsafe || 700;
+        return ((t + e.phase) % period) < unsafe;
+      }
+
+      function handleContact(name, e, t){
+        const def = types[name];
+        if(def.behavior === 'pulse' && !isPulseUnsafe(def, e, t)) return; // safe right now
+        if(typeof def.onContact === 'function'){ def.onContact(e); return; }
+        if(def.onContact === 'win'){ alive = false; opts.onWin && opts.onWin(); }
+        else if(def.onContact === 'lose'){ alive = false; opts.onLose && opts.onLose(); }
+        else if(def.onContact === 'collect'){
+          e.el.remove();
+          entities[name].splice(entities[name].indexOf(e), 1);
+          remaining[name]--;
+          if(remaining[name] <= 0 && opts.onAllCollected) opts.onAllCollected(name);
+        }
+      }
+
+      function resolveContacts(t){
+        if(!alive || !playerName) return;
+        const p = entities[playerName][0];
+        for(const name in entities){
+          if(name === playerName) continue;
+          for(const e of entities[name].slice()){ // slice: handleContact may splice the live array
+            if(e.r === p.r && e.c === p.c) handleContact(name, e, t);
+            if(!alive) return;
+          }
+        }
+      }
+
+      const controller = {
+        grid, entities,
+        tryMoveTo(r, c){
+          if(!alive || !playerName) return;
+          const p = entities[playerName][0];
+          if(r<0||r>=rows||c<0||c>=cols) return;
+          if(walls.has(key(r,c))) return;
+          if(Math.abs(r-p.r)+Math.abs(c-p.c) !== 1) return;
+          const dr = r-p.r, dc = c-p.c;
+          moveEntityTo(p, r, c);
+          const def = types[playerName];
+          if(def.onMove) def.onMove(p, dr, dc);
+          resolveContacts(performance.now());
+        },
+        move(dr, dc){
+          if(!playerName) return;
+          const p = entities[playerName][0];
+          controller.tryMoveTo(p.r+dr, p.c+dc);
+        },
+        destroy(){
+          alive = false;
+          if(rafId) cancelAnimationFrame(rafId);
+        }
+      };
+
+      if(playerName && types[playerName].behavior === 'input'){
+        this.setKeyHandler((e)=>{
+          if(e.key==='ArrowLeft') controller.move(0,-1);
+          if(e.key==='ArrowRight') controller.move(0,1);
+          if(e.key==='ArrowUp') controller.move(-1,0);
+          if(e.key==='ArrowDown') controller.move(1,0);
+        });
+      }
+
+      let rafId = null;
+      function frame(t){
+        if(!alive) return;
+        for(const name in types){
+          const def = types[name];
+          const list = entities[name];
+          if(def.behavior === 'pulse'){
+            const color = (def.render && def.render.color) || 'var(--danger)';
+            list.forEach(e=>{
+              const unsafe = isPulseUnsafe(def, e, t);
+              e.el.style.opacity = unsafe ? '0.85' : '0';
+              e.el.style.boxShadow = unsafe ? ('0 0 14px ' + color) : ('0 0 0px ' + color);
+            });
+          } else if(def.behavior === 'chase'){
+            const stepMs = def.stepMs || 400;
+            const p = playerName && entities[playerName][0];
+            if(p){
+              list.forEach(e=>{
+                if(t - e.lastStepAt < stepMs) return;
+                e.lastStepAt = t;
+                const next = self.bfsNextStep(cols, rows, walls, {r:e.r,c:e.c}, {r:p.r,c:p.c});
+                if(next.r!==e.r || next.c!==e.c) moveEntityTo(e, next.r, next.c);
+              });
+            }
+          } else if(def.behavior === 'patrol' && def.waypoints && def.waypoints.length){
+            const stepMs = def.stepMs || 500;
+            list.forEach(e=>{
+              if(t - e.lastStepAt < stepMs) return;
+              e.lastStepAt = t;
+              e.waypointIndex = (e.waypointIndex+1) % def.waypoints.length;
+              const wp = def.waypoints[e.waypointIndex];
+              moveEntityTo(e, wp.r, wp.c);
+            });
+          }
+        }
+        resolveContacts(t);
+        if(alive) rafId = requestAnimationFrame(frame);
+      }
+      rafId = requestAnimationFrame(frame);
+
+      return controller;
     },
 
     // A keyboard-steerable reticle: arrow keys nudge it by `step` px
