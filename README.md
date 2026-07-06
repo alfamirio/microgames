@@ -48,19 +48,23 @@ games-reflex-tap.js      — single-beat reaction tests (ODD ONE, MASH, WHACK,
 games-reflex-move.js     — reflex games with sustained movement/aiming
                            (BULLET HELL, BALANCE, AIM, BALLOON,
                            BRICK BREAKER, BASKET, MINI GOLF)
-games-motion-runner.js   — side-on runner/obstacle games (DINOJUMP, LAVA,
+games-motion-runner.js   — side-on runner/obstacle games (DINOJUMP,
                            SWIM, CLIMB, LANES, DODGE, ORBIT)
 games-motion-arcade.js   — top-down arcade/chase games (ESCAPE, FOG MAZE,
                            MAZE-MUNCH, REVERSE MUNCH, DOUBLE TROUBLE,
-                           TORCH BLITZ, SNAKE)
+                           TORCH BLITZ, LAVA, SNAKE)
+games-memory.js          — memory/observation games (COUNT, MEMORY, ODD FLASH,
+                           MATCH, PATTERN, SPOT, POSITION, CARD PEEK)
+games-drawing.js         — trace/cut/lasso games played by dragging a stroke
+                           across the stage (TRACE, DODGE-TRACE,
+                           MATCH THE LETTER, LASSO, LONE STAR, STATIC CUT,
+                           FALLING CUTS)
+games-logic.js           — logic/puzzle games (MATH, SCRAMBLE, ORDER,
+                           MATCH TYPE, DRAG, MORE DOTS, MISSING PIECE,
+                           MIRROR MATCH, GROUP BY RULE)
 games-shooting.js        — aim-and-shoot games (QUICKDRAW, ALLEY, RUSH ALLEY,
                            BIRD HUNT, SKEET, SHMUP, INVADERS, BOSS RUN,
                            TURRET SIEGE)
-games-memory.js          — memory/observation games (COUNT, MEMORY, ODD FLASH,
-                           MATCH, PATTERN, SPOT, POSITION, CARD PEEK)
-games-logic.js           — logic/puzzle games (MATH, SCRAMBLE, ORDER, SORT IT,
-                           MATCH TYPE, DRAG, MORE DOTS, MISSING PIECE,
-                           MIRROR MATCH, GROUP BY RULE)
 music/                   — optional background track (microgames_music.opus);
                            the game runs fine if it's missing
 ```
