@@ -7,17 +7,18 @@
 
   // ---------- GLOBAL MAZE/CHASE GRID SIZE ----------
   // Single source of truth for ESCAPE, FOG MAZE, MAZE-MUNCH, REVERSE MUNCH,
-  // DOUBLE TROUBLE, and TORCH BLITZ (every grid game EXCEPT SNAKE, which
-  // plays on its own bigger open board and stays independent below).
-  // Bump these two numbers and every one of those six games resizes
+  // DOUBLE TROUBLE, TORCH BLITZ, and LAVA (every grid game EXCEPT SNAKE,
+  // which plays on its own bigger open board and stays independent below).
+  // Bump these two numbers and every one of those seven games resizes
   // together -- wall/hazard/dot counts already self-scale since they're all
   // derived from openCount = MAZE_COLS*MAZE_ROWS - walls.size, and
   // generateLayoutWithPoints' default point spacing already scales off
   // cols+rows. The one thing that does NOT auto-scale is anything tuned in
-  // real-world seconds (round time limits, torch light-decay window) or in
-  // fixed grid-cell units (TORCH BLITZ's minimum torch spacing) -- those are
-  // multiplied by MAZE_SCALE below so a bigger board doesn't quietly get
-  // harder (more ground to cover in the same old time).
+  // real-world seconds (round time limits, torch light-decay window, LAVA's
+  // warn/burn windows) or in fixed grid-cell units (TORCH BLITZ's minimum
+  // torch spacing) -- those are multiplied by MAZE_SCALE below so a bigger
+  // board doesn't quietly get harder (more ground to cover in the same old
+  // time).
   const MAZE_COLS = 9, MAZE_ROWS = 9;
   // baseline every timeLimit/litMs/minDist number below was originally
   // tuned at (7,7); this ratio keeps them proportionate at any other size
@@ -127,6 +128,30 @@
   //                           render.makeEl builds an element exposing
   //                           ._base/._bar/._fill, the same convention
   //                           TORCH BLITZ's own makeTorchEl uses.
+  //   cellHazard: { warnMs, lavaMs, spawnEvery, maxHot, playerTypeName }
+  //                           LAVA's "the floor is lava" mechanic: cells
+  //                           (not entities) cycle safe -> warn -> lava ->
+  //                           safe on their own clocks, tagged with the
+  //                           'hazard-warn'/'hazard-lava' CSS classes used
+  //                           elsewhere. One random safe cell is promoted
+  //                           to warn every spawnEvery, as long as fewer
+  //                           than maxHot cells are currently non-safe; a
+  //                           warn cell turns to lava after warnMs, and a
+  //                           lava cell reverts to safe after lavaMs.
+  //                           Loses the round (via onLose) the instant
+  //                           playerTypeName's (default 'player') current
+  //                           cell is lava -- checked both the moment a
+  //                           cell burns out from under a stationary
+  //                           player, and right after the player moves
+  //                           (so stepping onto an already-burning cell
+  //                           also loses). warnMs/lavaMs/spawnEvery can
+  //                           each be a number or a function of
+  //                           ctx.speedMul; maxHot can be a number or a
+  //                           function of openCount (non-wall cell count),
+  //                           default min(openCount-3, 16). This feature
+  //                           doesn't set ctx.survivalGame itself -- the
+  //                           caller's start() still owns that, same as
+  //                           every other win/lose wiring outside cfg.
   //
   // Returns { grid, entities, destroy() } — same shape makeEntityGrid
   // itself returns, so a caller can keep reaching into the live entities
@@ -172,6 +197,25 @@
         def.onMove = (e, dr, dc)=>{
           if(prevOnMove) prevOnMove(e, dr, dc);
           refreshFog();
+        };
+      }
+    }
+
+    // ---- cell-hazard lose condition (optional) ----
+    // checkCellHazard is filled in below once the grid/entities exist,
+    // same reassignable-closure trick refreshFog uses above -- this hook
+    // has to be installed on the player's onMove before makeEntityGrid
+    // constructs it, but the hazard-cell bookkeeping it reads isn't ready
+    // until after that call returns.
+    let checkCellHazard = ()=>{};
+    if(cfg.cellHazard){
+      const hzPlayerName = cfg.cellHazard.playerTypeName || 'player';
+      const def = types[hzPlayerName];
+      if(def){
+        const prevOnMove = def.onMove;
+        def.onMove = (e, dr, dc)=>{
+          if(prevOnMove) prevOnMove(e, dr, dc);
+          checkCellHazard();
         };
       }
     }
@@ -267,6 +311,73 @@
       torchRaf = requestAnimationFrame(torchLoop);
     }
 
+    // ---- cell-hazard setup (needs the grid/entities that now exist) ----
+    let hazardRaf = null;
+    if(cfg.cellHazard){
+      const hz = cfg.cellHazard;
+      const hzPlayerName = hz.playerTypeName || 'player';
+      const warnMs = typeof hz.warnMs === 'function' ? hz.warnMs(ctx.speedMul) : (hz.warnMs || 800);
+      const lavaMs = typeof hz.lavaMs === 'function' ? hz.lavaMs(ctx.speedMul) : (hz.lavaMs || 5000);
+      const spawnEvery = typeof hz.spawnEvery === 'function' ? hz.spawnEvery(ctx.speedMul) : (hz.spawnEvery || 420);
+      const openCount = cols*rows - walls.size;
+      const maxHot = typeof hz.maxHot === 'function' ? hz.maxHot(openCount) : (hz.maxHot != null ? hz.maxHot : Math.min(openCount - 3, 16));
+      const { key } = grid;
+
+      grid.cells.forEach(cd=>{ cd.hzState = 'safe'; cd.hzT = 0; });
+      function hotCount(){ return grid.cells.filter(cd=> cd.hzState!=='safe').length; }
+      function spawnWarn(){
+        const candidates = grid.cells.filter(cd=> cd.hzState==='safe' && !walls.has(key(cd.r,cd.c)));
+        if(!candidates.length) return;
+        const cd = MR.pick(candidates);
+        cd.hzState = 'warn'; cd.hzT = 0;
+        cd.el.classList.add('hazard-warn');
+      }
+      const doLose = ()=>{ if(alive){ alive = false; (cfg.onLose || ctx.onLose)(); } };
+      // catches "player stepped onto an already-burning cell" -- the loop
+      // below only fires the check at the instant a cell *becomes* lava,
+      // so a move onto a cell that's been lava for a while needs this
+      // separate check instead
+      checkCellHazard = function(){
+        const p = entities[hzPlayerName] && entities[hzPlayerName][0];
+        if(!p) return;
+        if(grid.cells[key(p.r,p.c)].hzState === 'lava') doLose();
+      };
+
+      let sinceSpawn = 0, lastHzT = performance.now();
+      function hazardLoop(t){
+        if(!alive) return;
+        const dt = t - lastHzT; lastHzT = t;
+
+        sinceSpawn += dt;
+        if(sinceSpawn > spawnEvery && hotCount() < maxHot){
+          sinceSpawn = 0;
+          spawnWarn();
+        }
+
+        grid.cells.forEach(cd=>{
+          if(cd.hzState==='warn'){
+            cd.hzT += dt;
+            if(cd.hzT >= warnMs){
+              cd.hzState = 'lava'; cd.hzT = 0;
+              cd.el.classList.remove('hazard-warn');
+              cd.el.classList.add('hazard-lava');
+              // catches "player was already standing here when it burned"
+              const p = entities[hzPlayerName] && entities[hzPlayerName][0];
+              if(p && cd.r===p.r && cd.c===p.c) doLose();
+            }
+          } else if(cd.hzState==='lava'){
+            cd.hzT += dt;
+            if(cd.hzT >= lavaMs){
+              cd.hzState = 'safe'; cd.hzT = 0;
+              cd.el.classList.remove('hazard-lava');
+            }
+          }
+        });
+        if(alive) hazardRaf = requestAnimationFrame(hazardLoop);
+      }
+      hazardRaf = requestAnimationFrame(hazardLoop);
+    }
+
     // ---- manually-driven "flee" entities (optional) ----
     const fleeTimers = (cfg.flee || []).map(spec=>{
       const typeName = spec.typeName;
@@ -289,6 +400,7 @@
       alive = false;
       fleeTimers.forEach(t=> clearInterval(t));
       if(torchRaf) cancelAnimationFrame(torchRaf);
+      if(hazardRaf) cancelAnimationFrame(hazardRaf);
       entityGrid.destroy();
     }
     ctx.onCleanup = destroy;
@@ -639,6 +751,45 @@
       // no snapshot yet — reaching the round timeout without ever getting
       // all three torches lit at once is a loss, same shape as SNAKE's
       // stopIsWin (false until the qualifying moment happens)
+    }
+  });
+
+  MR.games.push({
+    label: 'LAVA',
+    desc: 'The floor is lava — hop off tiles before they flash red then burn.',
+    word: 'FLOOR IS LAVA',
+    // baseline (WARN_MS/LAVA_MS/spawnEvery below) was originally tuned at
+    // a fixed 4x6 board; now that LAVA shares MAZE_COLS/MAZE_ROWS with the
+    // other maze games, MAZE_SCALE keeps the same feel at any board size
+    timeLimit: s => (6000*MAZE_SCALE)/s,
+    start(ctx){
+      const COLS = MAZE_COLS, ROWS = MAZE_ROWS;
+      buildGridGame(ctx, {
+        cols: COLS, rows: ROWS, gap: 5,
+        // single random start cell, no walls — LAVA's danger is entirely
+        // in the cells themselves, not the layout
+        layoutOpts: { pointCount: 1, wallDensity: 0 },
+        buildTypes([start]){
+          return {
+            player: {
+              isPlayer: true, at: [start], behavior: 'input',
+              render: { shape: 'circle', color: 'var(--go)', size: 0.5 }
+            }
+          };
+        },
+        cellHazard: {
+          // floored: this is the reaction window to step off a warned
+          // tile before it turns lethal, so it shouldn't shrink all the
+          // way down with difficulty — spawnEvery below already carries
+          // that instead
+          warnMs: speedMul => Math.max(600, (600*MAZE_SCALE) / speedMul),
+          lavaMs: speedMul => (6000*MAZE_SCALE) / speedMul,
+          spawnEvery: speedMul => Math.max(80, (120*MAZE_SCALE) / speedMul),
+          maxHot: openCount => Math.min(openCount - 10, Math.round(openCount * 0.66))
+        }
+      });
+      // survive the whole round without standing on lava = win
+      ctx.survivalGame = true;
     }
   });
 

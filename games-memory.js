@@ -44,7 +44,7 @@
     label: 'MEMORY',
     desc: 'Watch the flash sequence, then repeat it back.',
     word: 'WATCH & REPEAT',
-    timeLimit: s => 4200/s,
+    timeLimit: s => 6000/s,
     start(ctx){
       const { wrap, cells } = MR.makeGrid(2, 2, { gap: '12px', width: '70%', cellStyles: { aspectRatio: '1' } });
       MR.stage.appendChild(wrap);

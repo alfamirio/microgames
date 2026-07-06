@@ -151,39 +151,6 @@
 
 
   MR.games.push({
-    label: 'SORT IT',
-    desc: 'Tap the shapes in order — smallest to largest.',
-    word: 'SMALLEST TO LARGEST',
-    timeLimit: s => 3800/s,
-    start(ctx){
-      const n = 3;
-      const positions = [];
-      for(let i=0;i<n;i++){
-        positions.push({x: MR.rand(6,62), y: MR.rand(6,54)});
-      }
-
-      const sizes = [30,60,90];
-      const shuffled = MR.shuffle(sizes);
-      const order = shuffled.map((sz,i)=>i).sort((a,b)=>shuffled[a]-shuffled[b]);
-
-      let next = 0;
-      shuffled.forEach((sz,i)=>{
-        const b = MR.makeEl('target', { width: sz+'px', height: sz+'px', left: positions[i].x+'%', top: positions[i].y+'%', cursor: 'pointer' });
-        MR.bindActivate(b, ()=>{
-          if(order[next] === i){
-            MR.styleEl(b, { opacity: '0.25', pointerEvents: 'none' });
-            next++;
-            if(next >= n) ctx.onWin();
-          } else {
-            ctx.onLose();
-          }
-        }, { key: String(i+1) });
-        MR.stage.appendChild(b);
-      });
-    }
-  });
-
-  MR.games.push({
     label: 'MATCH TYPE',
     desc: 'Compare the two icons — tap SAME or DIFFERENT (or press 1 / 2).',
     word: 'SAME OR DIFFERENT?',
