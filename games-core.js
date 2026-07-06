@@ -47,13 +47,33 @@
   let musicEnabled = lsGet(MUSIC_KEY, null);
   musicEnabled = musicEnabled === null ? false : musicEnabled === '1';
 
+  // List of background music tracks to pick from at random. Add more
+  // entries here (e.g. 'music/microgames_music_05.opus') to grow the pool.
+  const MUSIC_TRACKS = [
+    'music/microgames_music_01.opus',
+    'music/microgames_music_02.opus',
+    'music/microgames_music_03.opus',
+    'music/microgames_music_04.opus'
+  ];
+
+  function pickRandomTrack(){
+    return MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)];
+  }
+
   let musicOk = true;
   let musicStarted = false;
   if(bgMusic){
     bgMusic.volume = 0.55;
-    // if microgames_music.opus isn't present (or fails to load for any
+    // if the chosen track isn't present (or fails to load for any
     // reason), quietly give up on it — the game runs identically without it
     bgMusic.addEventListener('error', ()=>{ musicOk = false; });
+    // when a track finishes, roll again for the next one (no built-in
+    // loop attribute, so this is what keeps the music going continuously)
+    bgMusic.addEventListener('ended', ()=>{
+      bgMusic.src = pickRandomTrack();
+      if(musicEnabled) bgMusic.play().catch(()=>{ musicOk = false; musicStarted = false; });
+    });
+    bgMusic.src = pickRandomTrack();
   } else {
     musicOk = false;
   }
