@@ -96,7 +96,7 @@
     label: 'ODD FLASH',
     desc: 'Watch the colors flash by, then pick the one that flashed twice.',
     word: 'WHICH REPEATED?',
-    timeLimit: s => 5000/s,
+    timeLimit: s => 6500/s,
     start(ctx){
       const palette = ['#3ef5c0','#ff3e7f','#f4e94c'];
       const colors = MR.shuffle(palette).slice(0,2);

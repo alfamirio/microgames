@@ -582,7 +582,7 @@
     label: 'MINI GOLF',
     desc: 'Mini golf swing: stop the POWER bar inside its green zone, then stop the PRECISION bar inside its (narrower) zone to sink the putt. Watch the ball actually fly the shot — miss POWER and it lands short or long; miss PRECISION and it curves off-line. Nail both and it flies straight into the cup. Tap/click SWING, or press space.',
     word: 'TEE OFF!',
-    timeLimit: s => 3000 / s,
+    timeLimit: s => 5000 / s,
     start(ctx){
       const wrap = MR.makeEl('', { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' });
 
@@ -688,8 +688,8 @@
       // power zone is wide and forgiving (this bar just needs a decent
       // hit); precision is the actual skill test, hence the narrower zone
       // and slightly slower sweep so it stays humanly stoppable
-      const power = buildBar('POWER', MR.rand(50, 74), 15);
-      const prec = buildBar('PRECISION', MR.rand(44, 54), 10);
+      const power = buildBar('POWER', MR.rand(50, 74), 30);
+      const prec = buildBar('PRECISION', MR.rand(44, 54), 25);
       wrap.appendChild(power.col);
       wrap.appendChild(prec.col);
       power.col.style.opacity = '1';

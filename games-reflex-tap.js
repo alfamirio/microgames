@@ -5,6 +5,59 @@
 
   // REFLEX / TAP -- quick single-beat reaction tests (react to a signal, hit the target, mash)
 
+
+  MR.games.push({
+    label: 'QUICKDRAW',
+    desc: 'Wait for the flash, then tap as fast as you can. Jump early and you lose instantly.',
+    word: 'WAIT FOR IT',
+    timeLimit: s => 4000/s,
+    start(ctx){
+      const btn = MR.makeEl('target', { width: '160px', height: '160px', background: 'var(--danger)', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '20px', color: '#0b0b10', fontWeight: '900' });
+      btn.textContent = 'WAIT';
+      MR.stage.appendChild(btn);
+
+      let goState = false;
+      let alive = true;
+      let cueTimer = null;
+
+      function scheduleGo(){
+        if(!alive) return;
+        goState = false;
+        btn.style.background = 'var(--danger)';
+        btn.textContent = 'WAIT';
+        const delay = MR.rand(700,1600) / ctx.speedMul;
+        cueTimer = setTimeout(()=>{
+          if(!alive) return;
+          triggerGo();
+        }, delay);
+      }
+
+      function triggerGo(){
+        if(!alive) return;
+        goState = true;
+        btn.style.background = 'var(--go)';
+        btn.textContent = 'GO!';
+        const goWindow = MR.rand(500,850) / ctx.speedMul;
+        cueTimer = setTimeout(()=>{
+          if(!alive) return;
+          scheduleGo();
+        }, goWindow);
+      }
+
+      scheduleGo();
+
+      btn.addEventListener('click', ()=>{
+        if(!alive) return;
+        alive = false;
+        clearTimeout(cueTimer);
+        if(goState) ctx.onWin(); else ctx.onLose();
+      });
+
+      ctx.onCleanup = ()=>{ alive=false; clearTimeout(cueTimer); };
+    }
+  });
+
+
   MR.games.push({
     label: 'ODD ONE',
     desc: 'Spot the one tile with a different color and tap it.',
@@ -118,7 +171,7 @@
     label: 'POP',
     desc: 'Pop every dot on screen before the timer ends.',
     word: 'POP THEM ALL',
-    timeLimit: s => 3000/s,
+    timeLimit: s => 4000/s,
     start(ctx){
       const n = Math.floor(Math.random() * 3) + 1;
       let remaining = n;

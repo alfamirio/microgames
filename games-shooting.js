@@ -9,183 +9,82 @@
   const CROOKS = ['👹', '🦹', '🧌'];
   const CIVILIANS = ['🧑', '👩', '👨', '👵', '👴', '👩‍🦰', '🧑‍🦱', '👩‍🦳'];
 
-  MR.games.push({
-    label: 'QUICKDRAW',
-    desc: 'Wait for the flash, then tap as fast as you can. Jump early and you lose instantly.',
-    word: 'WAIT FOR IT',
-    timeLimit: s => 4000/s,
-    start(ctx){
-      const btn = MR.makeEl('target', { width: '160px', height: '160px', background: 'var(--danger)', cursor: 'pointer', fontFamily: 'var(--display)', fontSize: '20px', color: '#0b0b10', fontWeight: '900' });
-      btn.textContent = 'WAIT';
-      MR.stage.appendChild(btn);
 
-      let goState = false;
-      let alive = true;
-      let cueTimer = null;
+  // ---------- SHARED GRID-GALLERY-SHOOTER ENGINE ----------
+  // A fixed ROWSxCOLS board of cardboard cutouts, each cell driven by
+  // gridSelector (click/tap, or arrow-keys + space/enter). Every cutout is
+  // either a crook (shoot it) or a bystander (don't) — same tell/no-tell
+  // cast as everything else in this pairing. Two distinct pacings live on
+  // this one engine, picked by cfg.continuous:
+  //   false (ALLEY)      — every cell pops up once, together, with a fixed
+  //                        1..N crook count baked in up front; clear every
+  //                        crook without ever hitting a bystander to win.
+  //   true  (RUSH ALLEY) — cells are independent slots that keep spawning
+  //                        a fresh crook-or-bystander at random on their
+  //                        own timer and duck back down unshot if their
+  //                        window runs out (a missed crook still ends the
+  //                        round); surviving the clock is itself a win.
+  // Both share cell layout, the crook/bystander art + pop in/out fx, and
+  // the hit/miss flash — only the spawn/lifecycle logic differs.
+  function buildGridGalleryShooter(ctx, cfg){
+    const ROWS = cfg.rows || 2, COLS = cfg.cols || 3, GAP = cfg.gap != null ? cfg.gap : 10;
+    const TOTAL = ROWS * COLS;
+    const w = MR.screen.clientWidth - 32, h = MR.screen.clientHeight - 32;
+    const cellW = (w - (COLS - 1) * GAP) / COLS;
+    const cellH = (h - (ROWS - 1) * GAP) / ROWS;
 
-      function scheduleGo(){
-        if(!alive) return;
-        goState = false;
-        btn.style.background = 'var(--danger)';
-        btn.textContent = 'WAIT';
-        const delay = MR.rand(700,1600) / ctx.speedMul;
-        cueTimer = setTimeout(()=>{
-          if(!alive) return;
-          triggerGo();
-        }, delay);
-      }
+    const wrap = MR.makeEl('', { position: 'absolute', left: '16px', top: '16px', width: w + 'px', height: h + 'px' });
+    MR.stage.appendChild(wrap);
 
-      function triggerGo(){
-        if(!alive) return;
-        goState = true;
-        btn.style.background = 'var(--go)';
-        btn.textContent = 'GO!';
-        const goWindow = MR.rand(500,850) / ctx.speedMul;
-        cueTimer = setTimeout(()=>{
-          if(!alive) return;
-          scheduleGo();
-        }, goWindow);
-      }
-
-      scheduleGo();
-
-      btn.addEventListener('click', ()=>{
-        if(!alive) return;
-        alive = false;
-        clearTimeout(cueTimer);
-        if(goState) ctx.onWin(); else ctx.onLose();
-      });
-
-      ctx.onCleanup = ()=>{ alive=false; clearTimeout(cueTimer); };
+    const slots = [];
+    for(let i = 0; i < TOTAL; i++){
+      const r = Math.floor(i / COLS), c = i % COLS;
+      const el = MR.makeEl('cell', { position: 'absolute', width: cellW + 'px', height: cellH + 'px', left: (c * (cellW + GAP)) + 'px', top: (r * (cellH + GAP)) + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.min(cellW, cellH) * 0.46 + 'px', overflow: 'hidden' });
+      wrap.appendChild(el);
+      slots.push({ el, r, c, i, active: null });
     }
-  });
 
+    let alive = true;
 
-  MR.games.push({
-    label: 'ALLEY',
-    desc: 'Alley-style quick draw: 6 cardboard cutouts pop up in a 2\u00d73 grid, 1\u20133 of them crooks. Shoot every crook, leave the bystanders standing \u2014 one wrong hit ends it. Click/tap a cutout, or steer the crosshair with arrow keys and fire with space/enter.',
-    word: 'DRAW!',
-    timeLimit: s => 5200 / s,
-    start(ctx){
-      const ROWS = 2, COLS = 3, GAP = 10;
-      const w = MR.screen.clientWidth - 32, h = MR.screen.clientHeight - 32;
-      const cellW = (w - (COLS - 1) * GAP) / COLS;
-      const cellH = (h - (ROWS - 1) * GAP) / ROWS;
-
-      const wrap = MR.makeEl('', { position: 'absolute', left: '16px', top: '16px', width: w + 'px', height: h + 'px' });
-      MR.stage.appendChild(wrap);
-
-      // 1-3 crooks among the 6 slots, positions randomized
-      const crookCount = Math.floor(MR.rand(1, 4));
-      const order = MR.shuffle([0, 1, 2, 3, 4, 5]);
-      const crookSet = new Set(order.slice(0, crookCount));
-
-      let remainingCrooks = crookCount;
-      let alive = true;
-
-      const figs = [];
-      for(let i = 0; i < 6; i++){
-        const r = Math.floor(i / COLS), c = i % COLS;
-        const isCrook = crookSet.has(i);
-        // pop-up entrance, staggered slightly per cutout for a quick-draw feel
-        const el = MR.makeEl('cell', { position: 'absolute', width: cellW + 'px', height: cellH + 'px', left: (c * (cellW + GAP)) + 'px', top: (r * (cellH + GAP)) + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.min(cellW, cellH) * 0.46 + 'px', background: '#c9a876', cursor: 'pointer', transition: 'transform 140ms ease, opacity 140ms ease, background 140ms ease', transform: 'translateY(14px) scale(0.9)', opacity: '0' });
-        el.textContent = isCrook ? MR.pick(CROOKS) : MR.pick(CIVILIANS);
-        wrap.appendChild(el);
-        figs.push({ el, isCrook, hit: false, r, c });
-        el.addEventListener('click', () => shoot(i));
-        setTimeout(() => {
-          if(!alive) return;
-          MR.styleEl(el, { transform: 'translateY(0) scale(1)', opacity: '1' });
-        }, 30 + i * 45);
-      }
-
-      function shoot(i){
-        if(!alive) return;
-        const f = figs[i];
-        if(!f || f.hit) return;
-        f.hit = true;
-        if(f.isCrook){
-          f.el.style.transform = 'scale(0.75) rotate(10deg)';
-          f.el.style.opacity = '0.2';
-          remainingCrooks--;
-          if(remainingCrooks <= 0){
-            alive = false;
-            ctx.onWin();
-          }
-        } else {
-          f.el.style.background = 'var(--danger)';
-          f.el.style.boxShadow = 'none';
-          alive = false;
-          ctx.onLose();
-        }
-      }
-
-      MR.gridSelector(ROWS, COLS, figs, (r, c) => shoot(r * COLS + c), f => f.hit);
-
-      ctx.onCleanup = () => { alive = false; };
+    // ---- shared cutout look + hit/miss fx ----
+    function armFigure(el, isCrook, transitionMs){
+      MR.styleEl(el, { background: '#c9a876', cursor: 'pointer', transition: `transform ${transitionMs}ms ease, opacity ${transitionMs}ms ease, background ${transitionMs}ms ease`, transform: 'translateY(14px) scale(0.9)', opacity: '0' });
+      el.textContent = isCrook ? MR.pick(CROOKS) : MR.pick(CIVILIANS);
     }
-  });
+    function popIn(el){ MR.styleEl(el, { transform: 'translateY(0) scale(1)', opacity: '1' }); }
+    function popDown(el){ MR.styleEl(el, { transform: 'translateY(14px) scale(0.85)', opacity: '0', cursor: 'default' }); }
+    function crookHitFx(el){ el.style.transform = 'scale(0.75) rotate(10deg)'; el.style.opacity = '0.2'; }
+    function bystanderHitFx(el){ el.style.background = 'var(--danger)'; el.style.boxShadow = 'none'; }
 
-  MR.games.push({
-    label: 'RUSH ALLEY',
-    desc: 'Open, fast-paced gallery: crooks and bystanders keep popping up and ducking back down at random across the 2\u00d73 board, sometimes more than one at once. Shoot every crook before it drops and never touch a bystander \u2014 survive to the bell. Click/tap a raised cutout, or steer the crosshair with arrow keys and fire with space/enter.',
-    word: 'STAY SHARP!',
-    timeLimit: s => 6000 / s,
-    start(ctx){
-      const ROWS = 2, COLS = 3, GAP = 10;
-      const w = MR.screen.clientWidth - 32, h = MR.screen.clientHeight - 32;
-      const cellW = (w - (COLS - 1) * GAP) / COLS;
-      const cellH = (h - (ROWS - 1) * GAP) / ROWS;
-
-      const wrap = MR.makeEl('', { position: 'absolute', left: '16px', top: '16px', width: w + 'px', height: h + 'px' });
-      MR.stage.appendChild(wrap);
-
-      // six independent slots — each one pops a crook or a bystander at
-      // random, on its own timer, so multiple can be up (or ducking) at once
-      const slots = [];
-      for(let i = 0; i < 6; i++){
-        const r = Math.floor(i / COLS), c = i % COLS;
-        const el = MR.makeEl('cell', { position: 'absolute', width: cellW + 'px', height: cellH + 'px', left: (c * (cellW + GAP)) + 'px', top: (r * (cellH + GAP)) + 'px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.min(cellW, cellH) * 0.46 + 'px', overflow: 'hidden' });
-        wrap.appendChild(el);
-        slots.push({ el, r, c, active: null });
-      }
-
-      let alive = true;
-      let spawnTimer = null;
-
-      // scales down with speedMul — later rounds are noticeably quicker
+    if(cfg.continuous){
+      // ---- RUSH ALLEY pacing: independent slots, each spawns its own crook/bystander on its own timer ----
+      const crookChance = cfg.crookChance != null ? cfg.crookChance : 0.45;
+      // scales down with speedMul — later rounds are noticeably quicker.
       // floored: this is the window to spot+click a crook before a miss
       // ends the round, so it must never shrink below a reasonable human
       // reaction time — difficulty instead comes from spawnEvery/maxConcurrent
-      const showDur = Math.max(1200, 1200 / ctx.speedMul);
-      const spawnEvery = 500 / ctx.speedMul;
-      const maxConcurrent = 2;
-      const crookChance = 0.45;
-
-      function popDown(slot){
-        const el = slot.el;
-        MR.styleEl(el, { transform: 'translateY(14px) scale(0.85)', opacity: '0', cursor: 'default' });
-      }
+      const showDur = Math.max(cfg.minShowDur || 1200, (cfg.showDur || 1200) / ctx.speedMul);
+      const spawnEvery = (cfg.spawnEvery || 500) / ctx.speedMul;
+      const maxConcurrent = cfg.maxConcurrent != null ? cfg.maxConcurrent : 2;
+      let spawnTimer = null;
 
       function spawnAt(slot){
         const isCrook = Math.random() < crookChance;
-        const el = slot.el;
-        MR.styleEl(el, { background: '#c9a876', cursor: 'pointer', transition: 'transform 100ms ease, opacity 100ms ease, background 100ms ease', transform: 'translateY(14px) scale(0.85)', opacity: '0' });
-        el.textContent = isCrook ? MR.pick(CROOKS) : MR.pick(CIVILIANS);
+        armFigure(slot.el, isCrook, 100);
 
         function onClick(){ shoot(slot); }
-        el.addEventListener('click', onClick);
+        slot.el.addEventListener('click', onClick);
         const rec = { isCrook, shot: false, onClick, hideTimeout: null };
         slot.active = rec;
 
         requestAnimationFrame(() => {
           if(slot.active !== rec) return;
-          MR.styleEl(el, { transform: 'translateY(0) scale(1)', opacity: '1' });
+          popIn(slot.el);
         });
 
         rec.hideTimeout = setTimeout(() => {
-          el.removeEventListener('click', onClick);
-          popDown(slot);
+          slot.el.removeEventListener('click', onClick);
+          popDown(slot.el);
           const wasCrook = rec.isCrook;
           slot.active = null;
           // reaching this timeout means it was never shot — shoot() always
@@ -204,11 +103,11 @@
         clearTimeout(rec.hideTimeout);
         slot.el.removeEventListener('click', rec.onClick);
         if(rec.isCrook){
-          slot.el.style.transform = 'scale(0.7) rotate(10deg)';
+          crookHitFx(slot.el);
           slot.el.style.opacity = '0.15';
           setTimeout(() => { if(slot.active === rec) slot.active = null; }, 140);
         } else {
-          slot.el.style.background = 'var(--danger)';
+          bystanderHitFx(slot.el);
           alive = false;
           ctx.onLose();
         }
@@ -239,202 +138,426 @@
         clearTimeout(spawnTimer);
         slots.forEach(s => { if(s.active) clearTimeout(s.active.hideTimeout); });
       };
+    } else {
+      // ---- ALLEY pacing: every cell pops up once, together, with a fixed crook count baked in up front ----
+      const [minC, maxC] = cfg.crookRange || [1, 4];
+      const crookCount = Math.floor(MR.rand(minC, maxC));
+      const order = MR.shuffle(slots.map(s => s.i));
+      const crookSet = new Set(order.slice(0, crookCount));
+      let remainingCrooks = crookCount;
+
+      slots.forEach(slot => {
+        slot.isCrook = crookSet.has(slot.i);
+        slot.hit = false;
+        // pop-up entrance, staggered slightly per cutout for a quick-draw feel
+        armFigure(slot.el, slot.isCrook, 140);
+        slot.el.addEventListener('click', () => shoot(slot.i));
+        setTimeout(() => {
+          if(!alive) return;
+          popIn(slot.el);
+        }, 30 + slot.i * 45);
+      });
+
+      function shoot(i){
+        if(!alive) return;
+        const slot = slots[i];
+        if(!slot || slot.hit) return;
+        slot.hit = true;
+        if(slot.isCrook){
+          crookHitFx(slot.el);
+          remainingCrooks--;
+          if(remainingCrooks <= 0){
+            alive = false;
+            ctx.onWin();
+          }
+        } else {
+          bystanderHitFx(slot.el);
+          alive = false;
+          ctx.onLose();
+        }
+      }
+
+      MR.gridSelector(ROWS, COLS, slots, (r, c) => shoot(r * COLS + c), s => s.hit);
+
+      ctx.onCleanup = () => { alive = false; };
+    }
+  }
+
+
+  MR.games.push({
+    label: 'ALLEY',
+    desc: 'Alley-style quick draw: 6 cardboard cutouts pop up in a 2\u00d73 grid, 1\u20133 of them crooks. Shoot every crook, leave the bystanders standing \u2014 one wrong hit ends it. Click/tap a cutout, or steer the crosshair with arrow keys and fire with space/enter.',
+    word: 'DRAW!',
+    timeLimit: s => 5200 / s,
+    start(ctx){
+      buildGridGalleryShooter(ctx, {
+        rows: 2, cols: 3, crookRange: [1, 4]
+      });
+    }
+  });
+
+  MR.games.push({
+    label: 'RUSH ALLEY',
+    desc: 'Open, fast-paced gallery: crooks and bystanders keep popping up and ducking back down at random across the 2\u00d73 board, sometimes more than one at once. Shoot every crook before it drops and never touch a bystander \u2014 survive to the bell. Click/tap a raised cutout, or steer the crosshair with arrow keys and fire with space/enter.',
+    word: 'STAY SHARP!',
+    timeLimit: s => 6000 / s,
+    start(ctx){
+      buildGridGalleryShooter(ctx, {
+        rows: 2, cols: 3, continuous: true,
+        showDur: 1200, spawnEvery: 500, maxConcurrent: 2, crookChance: 0.45
+      });
     }
   });
 
 
-  MR.games.push({
-    label: 'BIRD HUNT',
-    desc: 'Bird hunt. One duck darts around the sky in sharp zig-zags, bouncing off the edges instead of ever slipping away — click/tap it, or steer the crosshair with arrow keys and fire with space, before you run out of shots.',
-    word: 'PULL!',
-    timeLimit: s => 3000/s,
-    start(ctx){
-      const w = MR.screen.clientWidth - 26, h = MR.screen.clientHeight - 26;
-      const stageLabelEl = document.getElementById('stageLabel');
+  // ---------- SHARED GALLERY-SHOOTER ENGINE ----------
+  // A fixed crosshair/pointer fires at whatever's on the stage — no player
+  // ship, no lanes, just stationary-viewpoint targets — and any number of
+  // independent target *types* live and die on the stage at once. Each
+  // type in cfg.targets fully defines itself: how it moves, how big it is,
+  // how it looks, and how it spawns. A single always-up bounce-around
+  // silhouette (BIRD HUNT's duck) and a stream of launch-and-land arcs
+  // (SKEET's clays) are both just different parameter sets on the same
+  // TYPES list — nothing here special-cases either by name. This is the
+  // gallery-shooter counterpart to buildAxisShooter below: same idea
+  // (self-contained per-type configs read into a TYPES array with
+  // defaults), applied to a stationary shooting-gallery instead of a
+  // scrolling lane shooter.
+  //
+  // Every target instance carries its own alive/hit flags plus a cx/cy
+  // (top-down pixel center, matching pointer coords) and hitR (bare hit
+  // radius, before cfg.hitPad) so fireAt() can test every live target the
+  // same way regardless of which movement type produced it.
+  function buildFreeAimGalleryShooter(ctx, cfg){
+    const w = MR.screen.clientWidth - 26, h = MR.screen.clientHeight - 26;
+    const NEEDED = cfg.needed;
+    // cfg.ammo omitted (null) means unlimited shots — a miss just wastes a
+    // shot with no penalty (SKEET). A number means a miss costs one, and
+    // running dry before NEEDED hits is a loss (BIRD HUNT).
+    let ammo = cfg.ammo != null ? cfg.ammo : null;
+    let hits = 0, alive = true;
+    const targets = [];
+    const timers = [];
 
-      const NEEDED = 1, TOTAL_DUCKS = 1, START_AMMO = 3;
-      let ammo = START_AMMO, hits = 0, alive = true;
-      const ducks = [];
+    MR.stage.style.cursor = 'crosshair';
 
-      MR.stage.style.cursor = 'crosshair';
+    const stageLabelEl = document.getElementById('stageLabel');
+    function updateHud(){
+      if(!stageLabelEl) return;
+      let s = cfg.hudLabel + ' \u00b7 \uD83C\uDFAF ' + hits + '/' + NEEDED;
+      if(ammo != null) s += ' \u00b7 ammo ' + ammo;
+      stageLabelEl.textContent = s;
+    }
+    updateHud();
 
-      function updateHud(){
-        if(stageLabelEl) stageLabelEl.textContent = 'HUNT \u00b7 \uD83C\uDFAF ' + hits + '/' + NEEDED + ' \u00b7 ammo ' + ammo;
-      }
-      updateHud();
+    // ---- keyboard-driven crosshair (mouse/tap works directly on targets too) ----
+    const cs = cfg.crosshair || {};
+    MR.createCrosshair({ x: w * (cs.xFrac != null ? cs.xFrac : 0.5), y: h * (cs.yFrac != null ? cs.yFrac : 0.5), w, h, onFire: (x, y) => fireAt(x, y) });
 
-      // ---- keyboard-driven crosshair (mouse/tap works directly on ducks too) ----
-      MR.createCrosshair({ x: w/2, y: h*0.4, w, h, onFire: (x,y)=>fireAt(x,y) });
+    // ---- target types ----
+    //   movement       'roam' (bounces around the whole stage in zig-zag
+    //                  legs off every edge and stays alive until hit —
+    //                  BIRD HUNT's duck) or 'arc' (launches from the
+    //                  bottom edge on a fixed-time parabola and expires,
+    //                  unhit, the instant it lands — SKEET's clays)
+    //   size           roam: {w,h} in px. arc: diameter in px
+    //   speed          roam only: px/ms base speed, scaled by ctx.speedMul
+    //   minLeg/maxLeg  roam only: px range for each straight-line leg
+    //   turnSpread     roam only: radians of spread applied to the
+    //                  wall-bias heading picked after each bounce
+    //   flapMs         roam only: ms between silhouette flap frames
+    //   beak           roam only: draw a beak accent pointing +x (default true)
+    //   flightMs       arc only: fixed airborne time — deliberately NOT
+    //                  scaled by ctx.speedMul, so a target is never
+    //                  unfairly quick to spot; difficulty instead comes
+    //                  from spawn.every below
+    //   driftRange     arc only: [min,max] px of horizontal drift over the flight
+    //   apexRange      arc only: [minFrac,maxFrac] of h for the arc's peak height
+    //   spinRange      arc only: [min,max] deg of rotation over the flight
+    //   color/glow     visuals; hitColor is the flash-out color on a hit
+    //   hitPad         extra px added to the hit-test radius (default 10)
+    //   spawn.initial  roam only: instances spawned immediately (default 1)
+    //   spawn.every    arc only: ms between launches, scaled by ctx.speedMul (default 1000)
+    //   spawn.minEvery arc only: floor on the scaled interval above (default 650)
+    const TYPES = (cfg.targets || []).map(t => ({
+      movement: t.movement || 'roam',
+      size: t.size || (t.movement === 'arc' ? 26 : { w: 30, h: 18 }),
+      speed: (t.speed != null ? t.speed : 0.2) * ctx.speedMul,
+      minLeg: t.minLeg || 150, maxLeg: t.maxLeg || 300,
+      turnSpread: t.turnSpread != null ? t.turnSpread : Math.PI * 0.7,
+      flapMs: t.flapMs || 130,
+      beak: t.beak !== false,
+      flightMs: t.flightMs || 1550,
+      driftRange: t.driftRange || [40, 140],
+      apexRange: t.apexRange || [0.45, 0.8],
+      spinRange: t.spinRange || [180, 540],
+      color: t.color || 'var(--go)',
+      glow: t.glow || null,
+      hitColor: t.hitColor || 'var(--danger)',
+      hitPad: t.hitPad != null ? t.hitPad : 10,
+      spawn: Object.assign({ initial: 1, every: 1000, minEvery: 650 }, t.spawn || {})
+    }));
 
-      // ---- duck visuals & flight ----
-      // Beak is fixed pointing along the body's local +x axis; the whole
-      // element gets rotated to match its current heading, so it always
-      // visually faces the direction it's flying.
-      function makeDuckEl(){
-        const bodyW = 30, bodyH = 18;
-        const el = MR.makeEl('', { position: 'absolute', width: bodyW+'px', height: bodyH+'px', borderRadius: '50%', background: 'var(--go)', boxShadow: '0 0 8px rgba(62,245,192,0.55)', zIndex: 6 });
-        const beak = MR.makeEl('', { position: 'absolute', top: (bodyH/2 - 4)+'px', left: (bodyW - 1)+'px', width: '0', height: '0', borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '8px solid var(--flash)' });
+    function removeTarget(tg){
+      const i = targets.indexOf(tg);
+      if(i > -1) targets.splice(i, 1);
+    }
+
+    // ---- roam: bounce-around silhouette (e.g. the duck) ----
+    // Lives entirely inside [0,w]x[0,h] for its whole life — it never gets
+    // a chance to slip through a border. Whenever a wall clamp actually
+    // changes its position this frame, it immediately picks a fresh random
+    // heading biased back into the room (using the wall(s) it just
+    // touched to build that bias), so a bounce always looks like a
+    // believable carom rather than a stop-dead-at-the-edge.
+    function wallBiasAngle(x, y, bw, bh){
+      let vx = 0, vy = 0, any = false;
+      if(x <= 0.5){ vx += 1; any = true; }
+      if(x >= w-bw-0.5){ vx -= 1; any = true; }
+      if(y <= 0.5){ vy += 1; any = true; }
+      if(y >= h-bh-0.5){ vy -= 1; any = true; }
+      return any ? Math.atan2(vy, vx) : null;
+    }
+
+    function spawnRoam(type){
+      const bw = type.size.w, bh = type.size.h;
+      // Beak/nose is fixed pointing along the body's local +x axis; the
+      // whole element gets rotated to match its current heading, so it
+      // always visually faces the direction it's flying.
+      const el = MR.makeEl('', Object.assign({ position: 'absolute', width: bw+'px', height: bh+'px', borderRadius: '50%', background: type.color, zIndex: 6 }, type.glow ? { boxShadow: '0 0 8px ' + type.glow } : {}));
+      if(type.beak){
+        const beak = MR.makeEl('', { position: 'absolute', top: (bh/2 - 4)+'px', left: (bw - 1)+'px', width: '0', height: '0', borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '8px solid var(--flash)' });
         el.appendChild(beak);
-        MR.stage.appendChild(el);
-        return { el, bodyW, bodyH };
       }
+      MR.stage.appendChild(el);
 
-      const MIN_LEG_LEN = 150, MAX_LEG_LEN = 300;
-      const TURN_SPREAD = Math.PI * 0.7; // ~126° cone used when re-aiming off a wall
+      const tg = {
+        type, el, bw, bh, alive: true, hit: false,
+        x: MR.rand(10, w-bw-10), y: MR.rand(10, h-bh-10),
+        angle: MR.rand(0, Math.PI*2),
+        legLen: MR.rand(type.minLeg, type.maxLeg), legTraveled: 0,
+        flapT: 0, flapped: false,
+        cx: 0, cy: 0, hitR: Math.max(bw, bh)/2
+      };
+      targets.push(tg);
+      placeRoam(tg);
+      applyRoamHeading(tg);
+    }
 
-      // The duck lives entirely inside [0,w]x[0,h] for its whole life —
-      // it never gets a chance to slip through a border. Whenever a wall
-      // clamp actually changes its position this frame, it immediately
-      // picks a fresh random heading biased back into the room (using the
-      // wall(s) it just touched to build that bias), so a bounce always
-      // looks like a believable carom rather than a stop-dead-at-the-edge.
-      function wallBiasAngle(x, y, bodyW, bodyH){
-        let vx = 0, vy = 0, any = false;
-        if(x <= 0.5){ vx += 1; any = true; }
-        if(x >= w-bodyW-0.5){ vx -= 1; any = true; }
-        if(y <= 0.5){ vy += 1; any = true; }
-        if(y >= h-bodyH-0.5){ vy -= 1; any = true; }
-        return any ? Math.atan2(vy, vx) : null;
-      }
+    function placeRoam(tg){
+      tg.el.style.left = tg.x+'px';
+      tg.el.style.top = tg.y+'px';
+      tg.cx = tg.x + tg.bw/2;
+      tg.cy = tg.y + tg.bh/2;
+    }
 
-      function spawnDuck(){
-        const { el, bodyW, bodyH } = makeDuckEl();
-        const speedBase = 0.20 * ctx.speedMul; // px/ms — a bit brisker than before
-        const d = {
-          el, bodyW, bodyH, speedBase,
-          x: MR.rand(10, w-bodyW-10),
-          y: MR.rand(10, h-bodyH-10),
-          angle: MR.rand(0, Math.PI*2),
-          segLen: MR.rand(MIN_LEG_LEN, MAX_LEG_LEN),
-          segTraveled: 0,
-          flapT: 0,
-          flapped: false,
-          alive: true,
-          _cx: 0, _cy: 0
-        };
-        ducks.push(d);
-        placeDuck(d);
-        applyHeading(d);
-      }
+    function applyRoamHeading(tg){
+      const deg = tg.angle * 180/Math.PI;
+      const flap = tg.flapped ? 0.65 : 1;
+      tg.el.style.transform = `rotate(${deg}deg) scaleY(${flap})`;
+    }
 
-      function placeDuck(d){
-        d.el.style.left = d.x+'px';
-        d.el.style.top = d.y+'px';
-        d._cx = d.x + d.bodyW/2;
-        d._cy = d.y + d.bodyH/2;
-      }
+    function stepRoam(tg, dt){
+      const dist = tg.type.speed*dt;
+      let nx = tg.x + Math.cos(tg.angle)*dist;
+      let ny = tg.y + Math.sin(tg.angle)*dist;
+      const maxX = w-tg.bw, maxY = h-tg.bh;
+      let hitWall = false;
+      if(nx < 0){ nx = 0; hitWall = true; }
+      else if(nx > maxX){ nx = maxX; hitWall = true; }
+      if(ny < 0){ ny = 0; hitWall = true; }
+      else if(ny > maxY){ ny = maxY; hitWall = true; }
+      tg.x = nx; tg.y = ny;
 
-      function applyHeading(d){
-        const deg = d.angle * 180/Math.PI;
-        const flap = d.flapped ? 0.65 : 1;
-        d.el.style.transform = `rotate(${deg}deg) scaleY(${flap})`;
-      }
-
-      function removeDuck(d){
-        const i = ducks.indexOf(d);
-        if(i>-1) ducks.splice(i,1);
-      }
-
-      function playHitFx(d){
-        d.alive = false;
-        removeDuck(d);
-        d.el.style.transition = 'transform 320ms ease-in, opacity 320ms ease-in';
-        d.el.style.transform = 'translateY(46px) rotate(75deg)';
-        d.el.style.opacity = '0';
-        d.el.style.background = 'var(--danger)';
-        setTimeout(()=>{ d.el.remove(); }, 340);
-      }
-
-      function fireAt(x, y){
-        if(!alive) return;
-        MR.muzzleFlash(x, y);
-        let target = null;
-        for(const d of ducks){
-          if(!d.alive) continue;
-          const dx = x-d._cx, dy = y-d._cy;
-          const hitR = Math.max(d.bodyW, d.bodyH)/2 + 10;
-          if(dx*dx+dy*dy <= hitR*hitR){ target = d; break; }
+      if(hitWall){
+        const bias = wallBiasAngle(tg.x, tg.y, tg.bw, tg.bh);
+        tg.angle = (bias !== null ? bias : MR.rand(0, Math.PI*2)) + MR.rand(-tg.type.turnSpread/2, tg.type.turnSpread/2);
+        tg.legLen = MR.rand(tg.type.minLeg, tg.type.maxLeg);
+        tg.legTraveled = 0;
+      } else {
+        tg.legTraveled += dist;
+        if(tg.legTraveled >= tg.legLen){
+          tg.angle = MR.rand(0, Math.PI*2);
+          tg.legLen = MR.rand(tg.type.minLeg, tg.type.maxLeg);
+          tg.legTraveled = 0;
         }
-        if(target){
-          hits++;
-          playHitFx(target);
-          updateHud();
-          if(hits>=NEEDED){
-            alive = false;
-            setTimeout(()=> ctx.onWin(), 240);
-          }
+      }
+
+      tg.flapT += dt;
+      if(tg.flapT > tg.type.flapMs){
+        tg.flapT = 0;
+        tg.flapped = !tg.flapped;
+      }
+      applyRoamHeading(tg);
+      placeRoam(tg);
+    }
+
+    // ---- arc: launch-and-land target (e.g. a clay) ----
+    // flightMs is a fixed reaction-time budget, deliberately NOT scaled by
+    // ctx.speedMul — a target that's airborne for less time the harder the
+    // round gets would be punishing reflexes, not skill. Difficulty
+    // instead comes entirely from spawn.every: targets launch more often
+    // at higher speedMul, so more are in the air at once, without any
+    // single one ever becoming unfairly quick to spot.
+    function spawnArc(type){
+      const size = type.size;
+      const el = MR.makeEl('', { position: 'absolute', width: size+'px', height: size+'px', borderRadius: '50%', background: type.color, boxShadow: type.glow ? ('inset 0 -4px 0 rgba(0,0,0,0.25), 0 0 8px ' + type.glow) : 'inset 0 -4px 0 rgba(0,0,0,0.25)', zIndex: 6 });
+      MR.stage.appendChild(el);
+
+      const startX = MR.rand(size, w-size);
+      const drift = (Math.random()<0.5?-1:1) * MR.rand(type.driftRange[0], type.driftRange[1]);
+      const endX = Math.max(size, Math.min(w-size, startX+drift));
+      const apex = MR.rand(h*type.apexRange[0], h*type.apexRange[1]);
+      const spin = MR.rand(type.spinRange[0], type.spinRange[1]) * (Math.random()<0.5?-1:1);
+      const tg = {
+        type, el, size, startX, endX, apex, spin, t: 0, alive: true, hit: false,
+        x: startX, y: 0, cx: startX, cy: h, hitR: size/2
+      };
+      targets.push(tg);
+      placeArc(tg);
+    }
+
+    function placeArc(tg){
+      const p = tg.t / tg.type.flightMs;
+      tg.x = tg.startX + (tg.endX - tg.startX) * p;
+      tg.y = tg.apex * 4 * p * (1 - p); // height above the bottom edge; 0 at launch/landing, apex at p=0.5
+      tg.cx = tg.x;
+      tg.cy = h - tg.y; // convert bottom-offset height to a top-down y to compare with pointer coords
+      tg.el.style.left = (tg.x - tg.size/2) + 'px';
+      tg.el.style.bottom = tg.y + 'px';
+      tg.el.style.transform = 'rotate(' + (tg.spin * p) + 'deg)';
+    }
+
+    // ---- hit/miss fx ----
+    function playHitFx(tg){
+      tg.hit = true; tg.alive = false;
+      removeTarget(tg);
+      if(tg.type.movement === 'roam'){
+        tg.el.style.transition = 'transform 320ms ease-in, opacity 320ms ease-in';
+        tg.el.style.transform = 'translateY(46px) rotate(75deg)';
+        tg.el.style.opacity = '0';
+        tg.el.style.background = tg.type.hitColor;
+        setTimeout(()=> tg.el.remove(), 340);
+      } else {
+        tg.el.style.transition = 'transform 260ms ease-in, opacity 260ms ease-in';
+        tg.el.style.transform += ' scale(1.6)';
+        tg.el.style.opacity = '0';
+        tg.el.style.background = tg.type.hitColor;
+        setTimeout(()=> tg.el.remove(), 280);
+      }
+    }
+
+    // arc-only: an unhit target lands/leaves on its own with no penalty,
+    // it just vanishes (roam targets never expire; they persist until hit)
+    function playExpireFx(tg){
+      tg.alive = false;
+      removeTarget(tg);
+      tg.el.remove();
+    }
+
+    function fireAt(x, y){
+      if(!alive) return;
+      MR.muzzleFlash(x, y);
+      let target = null;
+      for(const tg of targets){
+        if(!tg.alive || tg.hit) continue;
+        const dx = x-tg.cx, dy = y-tg.cy;
+        const hitR = tg.hitR + tg.type.hitPad;
+        if(dx*dx+dy*dy <= hitR*hitR){ target = tg; break; }
+      }
+      if(target){
+        hits++;
+        playHitFx(target);
+        updateHud();
+        if(hits>=NEEDED){
+          alive = false;
+          setTimeout(()=> ctx.onWin(), cfg.winDelay != null ? cfg.winDelay : 240);
+        }
+      } else if(ammo != null){
+        ammo--;
+        updateHud();
+        if(ammo<=0 && hits<NEEDED){
+          alive = false;
+          ctx.onLose();
+        }
+      }
+    }
+
+    function onPointerDown(e){
+      const p = MR.pointerPos(e);
+      fireAt(p.x, p.y);
+    }
+    MR.stage.addEventListener('pointerdown', onPointerDown);
+
+    // ---- per-type spawn scheduling ----
+    // roam types spawn their initial count once and persist until hit;
+    // arc types keep launching on their own timer for the whole round.
+    TYPES.forEach(type => {
+      if(type.movement === 'roam'){
+        for(let i = 0; i < type.spawn.initial; i++) spawnRoam(type);
+      } else {
+        const every = Math.max(type.spawn.minEvery, type.spawn.every / ctx.speedMul);
+        (function trySpawn(){
+          if(!alive) return;
+          spawnArc(type);
+          timers.push(setTimeout(trySpawn, every));
+        })();
+      }
+    });
+
+    let lastT = performance.now();
+    function loop(t){
+      if(!alive) return;
+      const dt = t - lastT; lastT = t;
+      for(let i = targets.length-1; i >= 0; i--){
+        const tg = targets[i];
+        if(!tg.alive) continue;
+        if(tg.type.movement === 'roam'){
+          stepRoam(tg, dt);
         } else {
-          ammo--;
-          updateHud();
-          if(ammo<=0 && hits<NEEDED){
-            alive = false;
-            ctx.onLose();
-          }
+          tg.t += dt;
+          if(tg.t >= tg.type.flightMs){ playExpireFx(tg); continue; }
+          placeArc(tg);
         }
-      }
-
-      function onPointerDown(e){
-        const p = MR.pointerPos(e);
-        fireAt(p.x, p.y);
-      }
-      MR.stage.addEventListener('pointerdown', onPointerDown);
-
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive){ return; }
-        const dt = t - lastT; lastT = t;
-        for(let i=ducks.length-1;i>=0;i--){
-          const d = ducks[i];
-          if(!d.alive) continue;
-
-          const dist = d.speedBase*dt;
-          let nx = d.x + Math.cos(d.angle)*dist;
-          let ny = d.y + Math.sin(d.angle)*dist;
-          const maxX = w-d.bodyW, maxY = h-d.bodyH;
-          let hitWall = false;
-          if(nx < 0){ nx = 0; hitWall = true; }
-          else if(nx > maxX){ nx = maxX; hitWall = true; }
-          if(ny < 0){ ny = 0; hitWall = true; }
-          else if(ny > maxY){ ny = maxY; hitWall = true; }
-          d.x = nx; d.y = ny;
-
-          if(hitWall){
-            const bias = wallBiasAngle(d.x, d.y, d.bodyW, d.bodyH);
-            d.angle = (bias !== null ? bias : MR.rand(0, Math.PI*2)) + MR.rand(-TURN_SPREAD/2, TURN_SPREAD/2);
-            d.segLen = MR.rand(MIN_LEG_LEN, MAX_LEG_LEN);
-            d.segTraveled = 0;
-          } else {
-            d.segTraveled += dist;
-            if(d.segTraveled >= d.segLen){
-              d.angle = MR.rand(0, Math.PI*2);
-              d.segLen = MR.rand(MIN_LEG_LEN, MAX_LEG_LEN);
-              d.segTraveled = 0;
-            }
-          }
-
-          d.flapT += dt;
-          if(d.flapT > 130){
-            d.flapT = 0;
-            d.flapped = !d.flapped;
-          }
-          applyHeading(d);
-          placeDuck(d);
-        }
-        MR.rafId = requestAnimationFrame(loop);
       }
       MR.rafId = requestAnimationFrame(loop);
+    }
+    MR.rafId = requestAnimationFrame(loop);
 
-      spawnDuck();
+    ctx.onCleanup = ()=>{
+      alive = false;
+      timers.forEach(clearTimeout);
+      if(MR.rafId) cancelAnimationFrame(MR.rafId);
+      MR.stage.removeEventListener('pointerdown', onPointerDown);
+      MR.stage.style.cursor = '';
+      targets.forEach(tg=>tg.el.remove());
+    };
+    // no survivalGame/stopIsWin flag: a timeout before NEEDED hits is a
+    // loss, matching the engine's default endRound(false) on timeout
+  }
 
-      ctx.onCleanup = ()=>{
-        alive = false;
-        if(MR.rafId) cancelAnimationFrame(MR.rafId);
-        MR.stage.removeEventListener('pointerdown', onPointerDown);
-        MR.stage.style.cursor = '';
-        ducks.forEach(d=>d.el.remove());
-      };
-      // no survivalGame/stopIsWin flag: a timeout before the duck is hit
-      // is a loss, matching the engine's default endRound(false) on timeout
+
+  MR.games.push({
+    label: 'BIRD HUNT',
+    desc: 'Bird hunt. Two ducks dart around the sky in sharp zig-zags, bouncing off the edges instead of ever slipping away \u2014 click/tap either one, or steer the crosshair with arrow keys and fire with space, before you run out of shots. Just one clean hit wins it.',
+    word: 'PULL!',
+    timeLimit: s => 5000/s,
+    start(ctx){
+      buildFreeAimGalleryShooter(ctx, {
+        hudLabel: 'HUNT', needed: 1, ammo: 3, winDelay: 240,
+        crosshair: { xFrac: 0.5, yFrac: 0.4 },
+        targets: [
+          { // two ducks on the stage at once (spawn.initial:2), but
+            // needed:1 above means bagging either one ends the round \u2014
+            // a bit brisker than a plain default speed, and hitPad is a
+            // touch more forgiving than the shared default so a close
+            // shot on a small, fast-moving target still counts.
+            movement: 'roam', size: { w: 30, h: 18 }, speed: 0.25,
+            minLeg: 100, maxLeg: 300, glow: 'rgba(62,245,192,0.55)',
+            hitPad: 16, spawn: { initial: 2 }
+          }
+        ]
+      });
     }
   });
 
@@ -443,153 +566,24 @@
     label: 'SKEET',
     desc: 'Clay targets arc up from the bottom \u2014 shoot each one before it comes back down. Click/tap a clay, or steer the crosshair with arrow keys and fire with space/enter.',
     word: 'PULL!',
-    timeLimit: s => 6200 / s,
+    timeLimit: s => 7000 / s,
     start(ctx){
-      const w = MR.screen.clientWidth - 26, h = MR.screen.clientHeight - 26;
-      const NEEDED = 2;
-      let hits = 0, alive = true;
-      const clays = [];
-
-      MR.stage.style.cursor = 'crosshair';
-
-      const stageLabelEl = document.getElementById('stageLabel');
-      function updateHud(){
-        if(stageLabelEl) stageLabelEl.textContent = 'SKEET \u00b7 \uD83C\uDFAF ' + hits + '/' + NEEDED;
-      }
-      updateHud();
-
-      // ---- keyboard-driven crosshair (mouse/tap works directly on clays too) ----
-      MR.createCrosshair({ x: w/2, y: h*0.6, w, h, onFire: (x,y)=>fireAt(x,y) });
-
-      // ---- clay visuals & flight ----
-      // Flight time (T) is a fixed reaction-time budget, deliberately NOT
-      // scaled by ctx.speedMul — a target that's airborne for less time the
-      // harder the round gets would be punishing reflexes, not skill.
-      // Difficulty instead comes entirely from spawnEvery below: clays
-      // launch more often at higher speedMul, so more are in the air at
-      // once, without any single clay ever becoming unfairly quick to spot.
-      const T = 1550;
-      const claySize = 26;
-
-      function makeClayEl(){
-        const el = MR.makeEl('', { position: 'absolute', width: claySize+'px', height: claySize+'px', borderRadius: '50%', background: '#d9772e', boxShadow: 'inset 0 -4px 0 rgba(0,0,0,0.25), 0 0 8px rgba(217,119,46,0.5)', zIndex: 6 });
-        MR.stage.appendChild(el);
-        return el;
-      }
-
-      function spawnClay(){
-        const el = makeClayEl();
-        const startX = MR.rand(claySize, w-claySize);
-        const drift = (Math.random()<0.5?-1:1) * MR.rand(40,140);
-        const endX = Math.max(claySize, Math.min(w-claySize, startX+drift));
-        const apex = MR.rand(h*0.45, h*0.8);
-        const spin = MR.rand(180,540) * (Math.random()<0.5?-1:1);
-        const c = { el, startX, endX, apex, spin, t: 0, alive: true, hit: false, x: startX, y: 0 };
-        clays.push(c);
-        placeClay(c);
-      }
-
-      function placeClay(c){
-        const p = c.t / T;
-        c.x = c.startX + (c.endX - c.startX) * p;
-        c.y = c.apex * 4 * p * (1 - p); // height above the bottom edge; 0 at launch/landing, apex at p=0.5
-        c.el.style.left = (c.x - claySize/2) + 'px';
-        c.el.style.bottom = c.y + 'px';
-        c.el.style.transform = 'rotate(' + (c.spin * p) + 'deg)';
-      }
-
-      function removeClay(c){
-        const i = clays.indexOf(c);
-        if(i > -1) clays.splice(i, 1);
-      }
-
-      function playHitFx(c){
-        c.hit = true; c.alive = false;
-        removeClay(c);
-        c.el.style.transition = 'transform 260ms ease-in, opacity 260ms ease-in';
-        c.el.style.transform += ' scale(1.6)';
-        c.el.style.opacity = '0';
-        c.el.style.background = '#8a8a8a';
-        setTimeout(()=>c.el.remove(), 280);
-      }
-
-      function playMissFx(c){
-        c.alive = false;
-        removeClay(c);
-        c.el.remove();
-      }
-
-      function fireAt(x, y){
-        if(!alive) return;
-        MR.muzzleFlash(x, y);
-        let target = null;
-        for(const c of clays){
-          if(!c.alive || c.hit) continue;
-          const cy = h - c.y; // convert bottom-offset height to a top-down y to compare with pointer coords
-          const dx = x-c.x, dy = y-cy;
-          const hitR = claySize/2 + 10;
-          if(dx*dx+dy*dy <= hitR*hitR){ target = c; break; }
-        }
-        if(target){
-          hits++;
-          playHitFx(target);
-          updateHud();
-          if(hits>=NEEDED){
-            alive = false;
-            setTimeout(()=> ctx.onWin(), 220);
+      buildFreeAimGalleryShooter(ctx, {
+        hudLabel: 'SKEET', needed: 2, winDelay: 220,
+        crosshair: { xFrac: 0.5, yFrac: 0.6 },
+        targets: [
+          { // the clay — no ammo cfg above, so a miss just wastes a shot.
+            // hitPad is a touch more forgiving than the shared default.
+            // spawn.every/minEvery here share the same ratio as the 7000
+            // on timeLimit above, so the number of launch opportunities
+            // per round stays ~constant across the whole 0.8\u20131.6
+            // speedMul range; the floor only engages right at the top of
+            // that range, so it doesn't skew the ratio.
+            movement: 'arc', size: 26, color: '#d9772e', hitColor: '#8a8a8a',
+            hitPad: 16, spawn: { every: 1050, minEvery: 650 }
           }
-        }
-      }
-
-      function onPointerDown(e){
-        const p = MR.pointerPos(e);
-        fireAt(p.x, p.y);
-      }
-      MR.stage.addEventListener('pointerdown', onPointerDown);
-
-      // difficulty knob: launches come more often as speedMul climbs. The
-      // numerator/denominator here (1050, 6200 on timeLimit above) share the
-      // same ratio so the number of launch opportunities per round stays
-      // ~constant across the whole 0.8\u20131.6 range; the floor only ever
-      // engages right at the top of that range, so it doesn't skew the ratio.
-      const spawnEvery = Math.max(650, 1050 / ctx.speedMul);
-      let spawnTimer = null;
-      function trySpawn(){
-        if(!alive) return;
-        spawnClay();
-        spawnTimer = setTimeout(trySpawn, spawnEvery);
-      }
-
-      let lastT = performance.now();
-      function loop(t){
-        if(!alive) return;
-        const dt = t - lastT; lastT = t;
-        for(let i=clays.length-1;i>=0;i--){
-          const c = clays[i];
-          if(!c.alive) continue;
-          c.t += dt;
-          if(c.t >= T){
-            playMissFx(c);
-            continue;
-          }
-          placeClay(c);
-        }
-        MR.rafId = requestAnimationFrame(loop);
-      }
-      MR.rafId = requestAnimationFrame(loop);
-
-      trySpawn();
-
-      ctx.onCleanup = ()=>{
-        alive = false;
-        clearTimeout(spawnTimer);
-        if(MR.rafId) cancelAnimationFrame(MR.rafId);
-        MR.stage.removeEventListener('pointerdown', onPointerDown);
-        MR.stage.style.cursor = '';
-        clays.forEach(c=>c.el.remove());
-      };
-      // no survivalGame/stopIsWin flag: a timeout before NEEDED hits is a
-      // loss, matching HUNT's pattern above
+        ]
+      });
     }
   });
 
@@ -1102,7 +1096,7 @@
             // RUN's mini boss, so all three read as the same kind of threat.
             id: 'A', hp: 1, lanes: 1, speed: 0.20, movement: 'approach',
             icon: 'invader', maxShooters: 1, shooterScope: 'sharedType',
-            spawn: { every: 600, minEvery: 380 }
+            spawn: { every: 500, minEvery: 300 }
           }
         ]
       });
@@ -1135,7 +1129,7 @@
             // same 'invader' icon as SHMUP's Enemy A and BOSS RUN's mini boss.
             id: 'INVADER', hp: 1, lanes: 1, speed: 0.45, movement: 'sweepDescend',
             icon: 'invader', maxShooters: 2, shooterScope: 'sharedType',
-            spawn: { every: 600, minEvery: 380, count: 12 }
+            spawn: { every: 500, minEvery: 300, count: 12 }
           }
         ]
       });
@@ -1234,7 +1228,7 @@
             // familiar threat here too.
             id: 'A', hp: 1, lanes: 1, speed: 0.20, movement: 'approach',
             icon: 'invader', maxShooters: 1, shooterScope: 'sharedType',
-            spawn: { concurrent: 6, every: 600, minEvery: 380 }
+            spawn: { concurrent: 6, every: 500, minEvery: 300 }
           }
         ]
       });

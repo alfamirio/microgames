@@ -2,7 +2,7 @@
 
 A rapid-fire browser microgame arcade: a shuffled stack of tiny challenges, each just a few seconds long. Read the word, react fast, survive as long as you can.
 
-Pure HTML/CSS/vanilla JS — no build step, no dependencies. Open `index.html` in a browser (or serve the folder) and play.
+Pure HTML/CSS/vanilla JS — no build step, no dependencies. Open `index.html` in a browser (or serve the folder) and play. The games run locally in your browser.
 
 ## How it plays
 
@@ -43,7 +43,7 @@ index.html              — markup, styling, difficulty/stats UI
 games-core.js            — engine: round loop, scoring, lives/streak, timer bar,
                            difficulty & stats persistence, daily-seed logic,
                            roster panel, the shared MR namespace all games use
-games-reflex-tap.js      — single-beat reaction tests (ODD ONE, MASH, WHACK,
+games-reflex-tap.js      — single-beat reaction tests (QUICKDRAW, ODD ONE, MASH, WHACK,
                            CATCH, GO/STOP, POP, COMBO, RED LIGHT, RUN)
 games-reflex-move.js     — reflex games with sustained movement/aiming
                            (BULLET HELL, BALANCE, AIM, BALLOON,
@@ -62,7 +62,7 @@ games-drawing.js         — trace/cut/lasso games played by dragging a stroke
 games-logic.js           — logic/puzzle games (MATH, SCRAMBLE, ORDER,
                            MATCH TYPE, DRAG, MORE DOTS, MISSING PIECE,
                            MIRROR MATCH, GROUP BY RULE)
-games-shooting.js        — aim-and-shoot games (QUICKDRAW, ALLEY, RUSH ALLEY,
+games-shooting.js        — aim-and-shoot games (ALLEY, RUSH ALLEY,
                            BIRD HUNT, SKEET, SHMUP, INVADERS, BOSS RUN,
                            TURRET SIEGE)
 music/                   — optional background track (microgames_music.opus);

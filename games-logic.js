@@ -124,7 +124,7 @@
     label: 'ORDER',
     desc: 'Tap the scattered numbers in ascending order.',
     word: 'IN ORDER',
-    timeLimit: s => 3600/s,
+    timeLimit: s => 4000/s,
     start(ctx){
       const n = Math.floor(Math.random() * 2) + 2;
       const positions = [];
