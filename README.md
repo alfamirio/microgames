@@ -44,17 +44,18 @@ games-core.js            — engine: round loop, scoring, lives/streak, timer ba
                            difficulty & stats persistence, daily-seed logic,
                            roster panel, the shared MR namespace all games use
 games-reflex-tap.js      — single-beat reaction tests (ODD ONE, MASH, WHACK,
-                           CATCH, GO/STOP, POP, COMBO, RED LIGHT)
+                           CATCH, GO/STOP, POP, COMBO, RED LIGHT, RUN)
 games-reflex-move.js     — reflex games with sustained movement/aiming
-                           (BALANCE, LANES, AIM, BALLOON, DODGE, BREAKOUT,
-                           BASKET, ORBIT, MINI GOLF)
+                           (BULLET HELL, BALANCE, AIM, BALLOON,
+                           BRICK BREAKER, BASKET, MINI GOLF)
 games-motion-runner.js   — side-on runner/obstacle games (DINOJUMP, LAVA,
-                           SWIM, CLIMB)
-games-motion-arcade.js   — top-down arcade/chase games (BULLET HELL, ESCAPE,
-                           FOG MAZE, MAZE-MUNCH, REVERSE MUNCH,
-                           DOUBLE TROUBLE, SNAKE)
+                           SWIM, CLIMB, LANES, DODGE, ORBIT)
+games-motion-arcade.js   — top-down arcade/chase games (ESCAPE, FOG MAZE,
+                           MAZE-MUNCH, REVERSE MUNCH, DOUBLE TROUBLE,
+                           TORCH BLITZ, SNAKE)
 games-shooting.js        — aim-and-shoot games (QUICKDRAW, ALLEY, RUSH ALLEY,
-                           BIRD HUNT, SKEET, SHMUP, INVADERS, BOSS RUN)
+                           BIRD HUNT, SKEET, SHMUP, INVADERS, BOSS RUN,
+                           TURRET SIEGE)
 games-memory.js          — memory/observation games (COUNT, MEMORY, ODD FLASH,
                            MATCH, PATTERN, SPOT, POSITION, CARD PEEK)
 games-logic.js           — logic/puzzle games (MATH, SCRAMBLE, ORDER, SORT IT,
